@@ -4,15 +4,15 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Current build (MVP-1 report fixes):** `KaspaDesktopWallet-0.1.0-d8e460c-win-x64.zip`
-  - Built from **commit `d8e460c443a46851766d657a615bab45e439b8c9`** in a fresh `git clone` with an empty `git status` (KDW-01).
+- **Current build (retest round 2, N1–N7):** `KaspaDesktopWallet-0.1.0-f31dc83-win-x64.zip`
+  - Built from **commit `f31dc83b339eb6e367584de900ad9f5a43d1ed01`** in a fresh `git clone` with an empty `git status` (KDW-01).
   - NKaspa: `f41c86a6d36da37243bcdd41e76662ac6c25b349`.
   - SDK: 8.0.427.
-  - Build time: 2026-10-31 16:40:51 UTC+8.
-  - **SHA256:** `f09c8ac74820c2d0edaf9b79af3dae21545f1109edc6826d9ca2172b9b5212f2`, also listed in `SHA256SUMS`.
-- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-d8e460c-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep d8e460c` (InformationalVersion).
-- **Superseded:** the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
+  - Build time: 2026-10-31 16:53:27 UTC+8.
+  - **SHA256:** `42180cc6dc9ae5ff5dac79a9c20022bec8319215c663c4d6895e496a0dee68fb`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-f31dc83-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep f31dc83` (InformationalVersion).
+- **Superseded:** `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes) and the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
 - **Form:** portable zip with no installer. Contents:
   - the publish output of `dotnet publish src/KaspaWallet.WinForms -c Release -r win-x64 --self-contained false`
   - NOTICE
