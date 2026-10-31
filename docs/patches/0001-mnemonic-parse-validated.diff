@@ -1,0 +1,22 @@
+--- a/src/NKaspa/BIP39/Mnemonic.cs
++++ b/src/NKaspa/BIP39/Mnemonic.cs
+@@ -43,6 +43,19 @@
+             IsValidChecksum = ChecksumMatches(_indexes);
+         }
+ 
++        /// <summary>Parses a mnemonic and rejects a bad BIP39 checksum.</summary>
++        /// <exception cref="System.FormatException">Word count, unknown word, or checksum mismatch.</exception>
++        public static Mnemonic ParseValidated(string mnemonic, Wordlist? wordlist = null)
++        {
++            var parsed = new Mnemonic(mnemonic, wordlist);
++            if (!parsed.IsValidChecksum)
++            {
++                throw new FormatException("BIP39 checksum does not match.");
++            }
++
++            return parsed;
++        }
++
+         /// <summary>Builds a mnemonic from entropy. The length must be 16, 20, 24, 28, or 32 bytes.</summary>
+         /// <exception cref="System.ArgumentNullException"><paramref name="entropy"/> is null. <paramref name="wordlist"/> is null.</exception>
+         /// <exception cref="System.ArgumentOutOfRangeException">A value is outside the allowed range.</exception>
