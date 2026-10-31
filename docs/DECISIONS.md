@@ -232,3 +232,13 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **N5 / M2.** When the old settings used mainnet, both the import and the delete prompts say that the network choice is not imported, and they name what the app will use: the network saved in the new settings, or the default testnet-10. The note no longer attributes a MainnetEnabled value to either file.
 - **NkFolded removed.** The field held NKaspa's `ChangeFoldedIntoFee` but nothing read it, and its comment ("defense in depth") was inaccurate. Using it would mean a second fold measure, and G2/D22 deliberately keeps a single one (actual fee − expected fee), because NKaspa's value changes meaning between cases. Dead code is removed rather than given a role it should not have.
 - Tests: `Retest89772b3Tests` (11). The mainnet-note tests in `Retest570d403Tests` and `Retest6617246Tests` were rewritten to the new rule. The settings and wallet file formats are unchanged.
+
+## D28 — Settings are type-checked before they are written (N7), keys are case-insensitive (N8), first-run copy follows D27 (N9)
+
+- **N7.** The merge result is deserialized as `WalletSettings` with the same options as `Load` before anything is written (`WalletSettings.ValidateTypes`). A wrong value type, such as `"RpcTimeoutSeconds": "abc"`, `"MassPolicies": "x"`, `"FeePolicy": 5` or a fraction for an int, throws `InvalidOperationException` ("… would not load"). The delete or import is aborted with the new settings untouched, so t1 and t1b no longer lose the new settings. The prompts show the WARNING up front (`Status.SettingsError`). Range checks stay in `Normalize` (D-N6), so out-of-range values are still reset with a notice when the file is loaded.
+- **N8.** The merge compares key names case-insensitively, so `rpcTimeoutSeconds` from the old file is not added next to an existing `RpcTimeoutSeconds` (t6). The `Network` and `MainnetEnabled` exclusion was already case-insensitive.
+- **N9.** The first-run copy (`MigrateLegacyDirectory`, when the new folder does not exist yet) now follows D27:
+  - The copied settings.json loses `Network` and `MainnetEnabled` (any case), so the app starts on testnet-10 and mainnet must be chosen and confirmed again.
+  - The copied file must pass the N7 type check. If it is unreadable or fails the check, it is not carried over: the app uses defaults, and the legacy copy is kept unchanged. The legacy-folder prompt then reports the problem and refuses to delete (N4/N7), so nothing is lost silently.
+  - Wallet files are still copied byte for byte. The wallet and settings formats are unchanged.
+- Tests: `Retest806e349Tests` (11, counting theory cases).
