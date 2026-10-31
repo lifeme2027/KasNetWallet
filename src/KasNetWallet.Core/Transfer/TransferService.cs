@@ -84,10 +84,9 @@ public static class TransferService
         return null;
     }
 
-    private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange, ulong NkFolded = 0)
+    private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange)
     {
-        /// <summary>Change folded into the fee: NKaspa's own report (dea2697 TransactionBuilder.ChangeFoldedIntoFee), or our fee − expected check (defense in depth).</summary>
-        /// G2: one measure only — actual fee − expected fee. NKaspa's ChangeFoldedIntoFee is not used for decisions because its meaning
+        /// <summary>Change folded into the fee. G2: one measure only — actual fee − expected fee. NKaspa's ChangeFoldedIntoFee is not used for decisions because its meaning
         /// varies (sometimes the whole fee, sometimes change + a constant), which made fold/block alternate.
         public ulong Folded => Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0;
     }
@@ -169,7 +168,7 @@ public static class TransferService
         var relay = MassCalculator.RelayMass(mass);
         if (Math.Max(relay, mass.FeeMass) > c.Mass.EffectiveCap(c.Net))
             throw new TransferException($"Transaction mass {Math.Max(relay, mass.FeeMass)} exceeds the configured cap {c.Mass.EffectiveCap(c.Net)}. Use fewer inputs: send a smaller amount, or use Send max (it picks the largest UTXOs that fit).");
-        return new Built(tx, entries, inSum, inSum - outSum, change, ExpectedFee(c, mass), mass.FeeMass, relay, b.MinimumChange.Sompi, b.ChangeFoldedIntoFee.Sompi);
+        return new Built(tx, entries, inSum, inSum - outSum, change, ExpectedFee(c, mass), mass.FeeMass, relay, b.MinimumChange.Sompi);
     }
 
     private static Built? TryBuild(Ctx c, IEnumerable<Coin> pool, ulong amountSompi, Coin[]? mustSpend, out string? error)

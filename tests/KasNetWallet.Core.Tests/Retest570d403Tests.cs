@@ -116,22 +116,23 @@ public class Retest570d403Tests
         Assert.Equal(20, j["AutoLockMinutes"]!.GetValue<int>());
     }
 
-    // ---------- mainnet notice ----------
+    // ---------- mainnet notice (round 7 / N6: Network is never imported; the note only reports the old choice) ----------
     [Theory]
     [InlineData("\"Mainnet\"", null, true)]
     [InlineData("\"mainnet\"", "{}", true)]
     [InlineData("0", null, true)]
-    [InlineData("\"Mainnet\"", "{\"Network\": \"Testnet10\"}", false)]
+    [InlineData("\"Mainnet\"", "{\"Network\": \"Testnet10\"}", true)]
     [InlineData("\"Testnet10\"", null, false)]
-    public void Mainnet_ImportSwitch_IsAnnounced(string oldNet, string? newSettings, bool expect)
+    public void Mainnet_OldChoice_IsAnnounced_NotImported(string oldNet, string? newSettings, bool expect)
     {
         using var d = new Dirs();
         d.W(d.Old, "wallet.mainnet.json", "M");
         d.W(d.Old, "settings.json", $"{{\"Network\": {oldNet}, \"MainnetEnabled\": true}}");
         if (newSettings is not null) d.W(d.New, "settings.json", newSettings);
         var st = LegacyData.Inspect(d.Old, d.New, false);
-        Assert.Equal(expect, st.SwitchesToMainnet);
+        Assert.Equal(expect, st.OldUsesMainnet);
         Assert.Equal(expect, LegacyData.NoticeText(st).Contains("MAINNET"));
+        Assert.DoesNotContain("will start on MAINNET", LegacyData.NoticeText(st));
     }
 
     // ---------- N2 ----------

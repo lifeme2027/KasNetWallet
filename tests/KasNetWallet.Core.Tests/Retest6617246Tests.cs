@@ -61,30 +61,29 @@ public class Retest6617246Tests
         Assert.False(Directory.Exists(d.Old));
     }
 
-    // ---------- M2 ----------
+    // ---------- M2 (superseded by N6 in round 7: Network/MainnetEnabled are not imported) ----------
     [Theory]
-    [InlineData("true", null, true)]            // old enables mainnet, new has nothing
-    [InlineData("false", null, false)]          // mn2 case
-    [InlineData(null, null, false)]             // key absent = default false
-    [InlineData("true", "{\"MainnetEnabled\": false}", false)] // new value wins (absent-key merge)
-    [InlineData("false", "{\"MainnetEnabled\": true}", true)]
-    public void M2_MainnetNote_MatchesMainnetEnabledAfterImport(string? oldEnabled, string? newSettings, bool startsOnMainnet)
+    [InlineData("true", null)]
+    [InlineData("false", null)]
+    [InlineData(null, null)]
+    [InlineData("true", "{\"MainnetEnabled\": false}")]
+    [InlineData("false", "{\"MainnetEnabled\": true}")]
+    public void M2_MainnetNote_MatchesSettingsAfterImport(string? oldEnabled, string? newSettings)
     {
         using var d = new Dirs();
         d.W(d.Old, "wallet.mainnet.json", "M");
         d.W(d.Old, "settings.json", oldEnabled is null ? "{\"Network\": \"Mainnet\"}" : $"{{\"Network\": \"Mainnet\", \"MainnetEnabled\": {oldEnabled}}}");
         if (newSettings is not null) d.W(d.New, "settings.json", newSettings);
         var st = LegacyData.Inspect(d.Old, d.New, false);
-        Assert.True(st.SwitchesToMainnet);
-        Assert.Equal(startsOnMainnet, st.MainnetEnabledAfterImport);
         var text = LegacyData.NoticeText(st);
-        Assert.Equal(startsOnMainnet, text.Contains("will start on MAINNET"));
-        Assert.Equal(!startsOnMainnet, text.Contains("will not connect to mainnet"));
+        Assert.Contains("not imported", text);
+        Assert.Contains("testnet-10", text);
+        Assert.DoesNotContain("will start on MAINNET", text);
+        Assert.DoesNotContain("MainnetEnabled = false", text); // N5: nothing attributed to the old file it does not say
 
-        // the note agrees with the merged settings file
         LegacyData.MergeSettings(d.Old, d.New);
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Mainnet, s.Network);
-        Assert.Equal(startsOnMainnet, s.MainnetEnabled);
+        Assert.Equal(WalletNetwork.Testnet10, s.Network);
+        Assert.Equal(newSettings?.Contains("true") == true, s.MainnetEnabled); // only the new file's own value
     }
 }
