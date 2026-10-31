@@ -134,7 +134,7 @@ public class Retest5747f6bTests
     }
 
     [Theory]
-    [InlineData(false, 2_036UL, 9_000_000UL, 10_020_000UL, 5_000UL)]
+    [InlineData(false, 203_600UL, 9_000_000UL, 10_020_000UL, 5_000UL)] // dea2697: pre-Toccata cap, but 100 sompi/gram
     [InlineData(true, 203_600UL, 1_500_000UL, 2_010_000UL, 2_500UL)]
     public void G2_FoldBlockChange_IsMonotonic(bool post, ulong baseFee, ulong from, ulong to, ulong step)
     {

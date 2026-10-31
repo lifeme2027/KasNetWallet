@@ -21,7 +21,9 @@ public class NKaspa5c49251Tests
         var main = p.Resolve(Network.Mainnet);             // no DAA: conservative mainnet mix
         Assert.False(main.ToccataActive);
         Assert.Equal(100UL, main.MinimumRelayFeeRate);
-        Assert.Equal(1UL, new WMass { ToccataActive = false }.Resolve(Network.Testnet).MinimumRelayFeeRate);
+        // dea2697: the wallet never uses the 1 sompi/gram pre-Toccata relay rate (current nodes may reject it)
+        Assert.Equal(100UL, new WMass { ToccataActive = false }.Resolve(Network.Testnet).MinimumRelayFeeRate);
+        Assert.Equal(100UL, p.WithDaaScore(Network.TestnetToccataActivationDaaScore - 1).Resolve(Network.Testnet).MinimumRelayFeeRate);
     }
 
     [Fact]
@@ -33,7 +35,7 @@ public class NKaspa5c49251Tests
         var pre = TransferService.Build(acc, coins, TestData.AbandonTestnet, Kas.SompiPerKas, massPolicy: new WMass { ToccataActive = false });
         Assert.Equal(post.ExpectedFeeSompi, post.FeeSompi);
         Assert.Equal(pre.ExpectedFeeSompi, pre.FeeSompi);
-        Assert.True(pre.FeeSompi * 50 < post.FeeSompi, $"pre={pre.FeeSompi} post={post.FeeSompi}");
+        Assert.Equal(post.FeeSompi, pre.FeeSompi); // dea2697 adaptation: forced pre-Toccata keeps the 100 sompi/gram rate
     }
 
     [Fact]

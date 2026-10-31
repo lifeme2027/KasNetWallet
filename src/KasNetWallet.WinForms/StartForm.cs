@@ -52,7 +52,7 @@ internal sealed class StartForm : Form
         if (net == WalletNetwork.Mainnet && !_settings.MainnetEnabled)
         {
             var ok = MessageBox.Show(this,
-                "MAINNET uses real KAS. This is an unaudited alpha wallet built on an alpha library (NKaspa 0.1.9-alpha).\n" +
+                "MAINNET uses real KAS. This is an unaudited alpha wallet built on an alpha library (NKaspa 0.1.10-alpha).\n" +
                 "Losses caused by bugs cannot be reversed. Only continue if you accept this risk.\n\nEnable mainnet?",
                 "Enable mainnet", MessageBoxButtons.YesNo, MessageBoxIcon.Stop, MessageBoxDefaultButton.Button2);
             if (ok != DialogResult.Yes) throw new OperationCanceledException("Mainnet not enabled.");

@@ -202,3 +202,16 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **Mainnet notice.** If the old settings use mainnet and the new settings have no `Network` key, the import prompt says the app will start on MAINNET.
 - **Known issue (not fixed): node estimate does not charge storage mass.** NodeEstimate charges relay mass × node rate (D23). Storage mass is only checked against the mass limit, not paid for. If a node starts requiring fees for storage mass, transactions with small outputs may be rejected.
 - Tests: `Retest570d403Tests` (17 tests, counting theory cases). `Import_MergesSettings_KeepsUserChangedNewValues` was updated to the absent-key rule.
+
+## D25 — NKaspa pin 5c49251 → dea2697 (0.1.10-alpha)
+
+- **Pin.** `Directory.Build.props` `NKaspaPinnedCommit` and NOTICE now name `dea269794937328b1c93a7985ff88b9e9f462a09` (origin/main). NKaspa itself is unmodified; the clone is only checked out at that commit. See NKaspa CHANGELOG 0.1.10-alpha.
+- **API: `ChangeFolded` / `FoldedChange` → `TransactionBuilder.ChangeFoldedIntoFee`.** The two properties were merged into one `Money` (zero = nothing folded). `TransferService` reads `ChangeFoldedIntoFee.Sompi` for the diagnostic `NkFolded` field. Fold/block decisions are unchanged: they still use the wallet's own measure, actual fee − expected fee (D22/G2).
+- **1 sompi/gram pre-Toccata relay rate is never used.** dea2697 restored 1 sompi/gram for `MassPolicy.PreToccata` (rusty-kaspa `90dbf074` `LEGACY_MINIMUM_RELAY_TRANSACTION_FEE`), which current post-Toccata nodes may reject. `MassPolicy.Resolve` now:
+  - with a known DAA at or after the network's Toccata activation, always returns `PostToccata`, even when `ToccataActive = false` is forced in settings;
+  - otherwise (forced pre-Toccata, DAA below activation, or mainnet without a DAA) uses the pre-Toccata 100,000 mass cap with the post-Toccata 100 sompi/gram rate;
+  - so the relay rate is never below 100. The earlier check covered only the mainnet-without-DAA case; forced pre-Toccata and a low DAA gave 1 sompi/gram, and that is now fixed.
+  - The switch is `Network.ToccataActivationDaaScore` (testnet-10 467,579,632, mainnet 474,165,565). `Network.TestnetZkHardeningActivationDaaScore` (476,232,000) is a different checkpoint and is deliberately not used as the switch.
+  - `WalletManager` still passes the node's virtual DAA score (`WithDaaScore`), so live tn10 resolves to `PostToccata`.
+- **Tests.** `NKaspaDea2697Tests` (13 tests, counting theory cases). Two `NKaspa5c49251Tests` assertions and the pre-Toccata `G2_FoldBlockChange_IsMonotonic` case (base fee 2,036 → 203,600) were updated to the 100 sompi/gram rule.
+- The mainnet warning now names NKaspa 0.1.10-alpha.
