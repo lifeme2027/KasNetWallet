@@ -253,3 +253,16 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **N11.** The merge first validates the new settings.json on its own. If that fails, the message names the new file and its path. If only the merged result fails, the problem came from the old values, and the message names the old file.
 - **N12.** Mainnet detection in the old settings matches the `Network` key case-insensitively (`NETWORK`, `network`), matching how keys are read and merged.
 - The wallet and settings formats are unchanged. Tests: `Retest1b584ecTests`.
+
+## D30 — Legacy fallback is testnet-only and read-only; damaged reminder file; raw values in notices (retest 506a924)
+
+- **N13.** `WalletSettings.ResolveDirectory` may fall back to the old KaspaDesktopWallet folder when the move cannot finish. Examples: a `.migrating` folder that cannot be deleted, an unreadable old settings.json, or a config folder that cannot be written. In that case `LegacyFallbackReason` is set, and start-up calls `ApplyStartupSafety`:
+  - The session starts on testnet-10 with mainnet disabled and the default node URL. This happens in memory only.
+  - Settings are read-only for the session: `Save` does nothing, so the old settings.json is never rewritten.
+  - A warning dialog explains the reason and how to finish the move.
+  - Choosing mainnet shows the "Enable mainnet" confirmation again.
+  - The folder is resolved once per process, so wallets and settings always use the same folder.
+- **N14.** `legacy-reminder.json` is read with the strict parser. Duplicate keys, a non-integer or negative count, a non-object or invalid JSON make the file count as damaged: it is treated as absent (count 0) and a warning is logged. The prompt keeps working, and the next "No" overwrites the file with a valid one.
+- **N15.** An unknown network value keeps its original text (`TolerantNetworkConverter.Describe`). The notice shows what the file contains, for example `Network=1.5`, `Network="foo"`, `Network=true` or `Network=7`, instead of an internal number like -2. Undefined integers are now also tracked this way.
+- These stay informational and unchanged: nested duplicate keys (I1), `Network` and `network` in the same file (first match, which is safe), and unknown keys being carried over (I2).
+- The wallet and settings formats are unchanged. Tests: `Retest506a924Tests`.
