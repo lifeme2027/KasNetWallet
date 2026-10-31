@@ -1,4 +1,4 @@
-# Requests to NKaspa (from Kaspa Desktop Wallet)
+# Requests to NKaspa (from KasNet Wallet)
 
 Now pinned to NKaspa commit `5c49251dfc2e1e5396344f802514bc6ee5e828fa` (0.1.10-alpha; previously `f41c86a6`, 0.1.9-alpha).
 

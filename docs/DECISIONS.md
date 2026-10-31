@@ -10,7 +10,7 @@ Status legend: **OPEN** = needs owner confirmation; **DONE** = decided for the M
   - it carries the header `Derived from plenteum/plenteum-wallet-winforms`
   - it is listed in NOTICE and below
   - all Plenteum/TurtleCoin logic and branding is stripped
-- **Copied/derived files: none so far.** All of `src/KaspaWallet.WinForms` is original code. The repo was used as a layout/flow reference only.
+- **Copied/derived files: none so far.** All of `src/KasNetWallet.WinForms` is original code. The repo was used as a layout/flow reference only.
 
 ### License pending: needs author permission or rewrite before any public release
 (Superseded by the user decision above. Kept as the required list of copied/derived files.)
@@ -32,7 +32,7 @@ NKaspa's `Mnemonic(string)` constructor accepts a phrase with a bad checksum and
 - .NET `string` (the mnemonic as typed/generated, and WinForms `TextBox.Text`) is immutable and can't be reliably wiped. Accepted for the MVP. A future option is SecureString-like char[] input plus an NKaspa API that takes a span.
 
 ## D6 — Keystore format — DONE
-AES-256-GCM. The key comes from Argon2id (Konscious 1.3.1), defaults m=64 MiB, t=3, p=4, with a random 16-byte salt and a 12-byte nonce. The AAD binds version, network, address and the KDF params, and loading enforces minimums on the KDF params. The encrypted payload is the normalized mnemonic, not an xprv, so the account can be re-derived. There is one file per network: `%APPDATA%/KaspaDesktopWallet/wallet.<network>.json`.
+AES-256-GCM. The key comes from Argon2id (Konscious 1.3.1), defaults m=64 MiB, t=3, p=4, with a random 16-byte salt and a 12-byte nonce. The AAD binds version, network, address and the KDF params, and loading enforces minimums on the KDF params. The encrypted payload is the normalized mnemonic, not an xprv, so the account can be re-derived. There is one file per network: `%APPDATA%/KasNetWallet/wallet.<network>.json`.
 
 ## D7 — Address scope — DONE (MVP)
 Only receive index 0 (`m/44'/111111'/0'/0/0`); change goes back to the same address (no /1/i change chain yet — TBD, see D14). Multiple addresses, change chain, and address discovery are deferred.
@@ -80,7 +80,7 @@ Incoming txs are only visible as UTXOs/balance. TBD: an indexer (e.g. the api.ka
 - Wallet file ACL hardening (beyond the %APPDATA% user profile): TBD.
 
 ## D15 — Logging — DONE
-The log goes to the local file `%LOCALAPPDATA%/KaspaDesktopWallet/logs/wallet-YYYYMMDD.log`. Every line passes through `SecretRedactor`, which masks:
+The log goes to the local file `%LOCALAPPDATA%/KasNetWallet/logs/wallet-YYYYMMDD.log`. Every line passes through `SecretRedactor`, which masks:
 - xprv/kprv/ktrv/tprv strings
 - hex runs of ≥64 characters (this includes tx ids)
 - runs of ≥12 BIP39 words
@@ -150,3 +150,10 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
   - `Generate` uses `ToPhrase()`.
 - **wRPC:** `KaspaWebSocketOptions` sets an explicit 16 MiB frame cap and uses the wallet RPC timeout for connect and requests. AutoReconnect stays off: the wallet's own reconnect re-checks the network id after reconnecting.
 - **JSON:** the wallet never serializes NKaspa key types. NKaspa's default serializer now throws on them, which adds a second layer of protection.
+
+## D20. Product rename: KaspaDesktopWallet / KaspaWallet → KasNetWallet
+
+- **What changed:** solution `KasNetWallet.sln`; projects and namespaces `KasNetWallet.Core`, `KasNetWallet.WinForms`, `KasNetWallet.Core.Tests` (moved with `git mv`, history kept); window titles, assembly names, README, docs and NOTICE now say "KasNet Wallet". NKaspa is untouched.
+- **Wallet file format:** unchanged. Keystore, settings and history JSON are byte-compatible; no AAD or version field contains the product name.
+- **Data folder:** the default is now `%APPDATA%\KasNetWallet`. On first start, if that folder does not exist and the old `%APPDATA%\KaspaDesktopWallet` does, `WalletSettings.MigrateLegacyDirectory` copies all files into `KasNetWallet.migrating` and then renames it atomically to `KasNetWallet`. The old folder is **left in place** as a backup (never deleted). If the copy fails (I/O or permissions), the app keeps using the old folder so existing wallets still open.
+- **Log folder:** new logs go to `%LOCALAPPDATA%\KasNetWallet\logs`; old logs are not migrated (they hold no wallet state).

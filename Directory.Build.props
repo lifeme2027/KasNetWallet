@@ -10,7 +10,7 @@
     <!-- Pinned NKaspa commit (0.1.9-alpha). Build fails if the clone is at another commit or has local changes. -->
     <NKaspaPinnedCommit>5c49251dfc2e1e5396344f802514bc6ee5e828fa</NKaspaPinnedCommit>
   </PropertyGroup>
-  <Target Name="VerifyNKaspaPin" BeforeTargets="ResolveProjectReferences" Condition="'$(MSBuildProjectName)' == 'KaspaWallet.Core' And '$(SkipNKaspaPinCheck)' != 'true'">
+  <Target Name="VerifyNKaspaPin" BeforeTargets="ResolveProjectReferences" Condition="'$(MSBuildProjectName)' == 'KasNetWallet.Core' And '$(SkipNKaspaPinCheck)' != 'true'">
     <Exec Command="git -C &quot;$(NKaspaRoot)&quot; rev-parse HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="_NKaspaHead" />
     </Exec>

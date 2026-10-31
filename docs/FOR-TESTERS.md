@@ -1,4 +1,4 @@
-# For testers — Kaspa Desktop Wallet 0.1.0 (alpha)
+# For testers — KasNet Wallet 0.1.0 (alpha)
 
 Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on the actual code at this commit. **TBD** items are also tracked in `docs/DECISIONS.md` (mostly D11, D12, D14).
 Times are Asia/Shanghai (UTC+8).
@@ -11,10 +11,10 @@ Times are Asia/Shanghai (UTC+8).
   - Build time: 2026-10-31 18:16:17 UTC+8.
   - **SHA256:** `066ace85eecd44874e379ac8263db5b7a2c0a0b71d8d5c254f55467988f04e89`, also listed in `SHA256SUMS`.
 - **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-0c7e556-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep 0c7e556` (InformationalVersion).
+- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 0c7e556` (InformationalVersion).
 - **Superseded:** `…-cc6337e-win-x64.zip` (`e77e9b53…`, round 3, NKaspa f41c86a), `…-f31dc83-win-x64.zip` (`42180cc6…`, round 2), `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes) and the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
 - **Form:** portable zip with no installer. Contents:
-  - the publish output of `dotnet publish src/KaspaWallet.WinForms -c Release -r win-x64 --self-contained false`
+  - the publish output of `dotnet publish src/KasNetWallet.WinForms -c Release -r win-x64 --self-contained false`
   - NOTICE
   - NKaspa-LICENSE.txt
 - **Runtime:** framework-dependent, so it needs the **.NET 8 Desktop Runtime x64** installed. No admin rights are needed. A self-contained build is TBD.
@@ -23,7 +23,7 @@ Times are Asia/Shanghai (UTC+8).
   - PDB paths are mapped to `/_/` via PathMap (KDW-02). NKaspa's own PDB still contains its clone path.
 - **Reproducibility:** the zip entries use fixed timestamps. The publish output itself is not guaranteed bit-reproducible, so verify against SHA256SUMS and BUILD-INFO.
 - **Code signing:** none (unsigned), so expect a SmartScreen warning. Signing is TBD.
-- **Entry point:** `KaspaWallet.WinForms.exe`. DPI mode is PerMonitorV2.
+- **Entry point:** `KasNetWallet.WinForms.exe`. DPI mode is PerMonitorV2.
 
 ## 2. NKaspa version
 - **Pinned:** `lifeme2027/NKaspa` commit `5c49251dfc2e1e5396344f802514bc6ee5e828fa` (0.1.10-alpha, MIT), referenced as a ProjectReference to a local clone (`../kdw-src/NKaspa`).
@@ -53,7 +53,7 @@ Times are Asia/Shanghai (UTC+8).
   - All RPC calls are async, so the UI is not blocked. During a call the window is disabled and shows a wait cursor.
 
 ## 4. Wallet file
-- **Location:** `%APPDATA%\KaspaDesktopWallet\wallet.<network>.json` (e.g. `wallet.testnet10.json`). Settings are in `settings.json` and local history in `history.<network>.json`, all in the same folder.
+- **Location:** `%APPDATA%\KasNetWallet\wallet.<network>.json` (e.g. `wallet.testnet10.json`). Settings are in `settings.json` and local history in `history.<network>.json`, all in the same folder.
 - **Format:** JSON v1 with `kdf{m,t,p,salt}`, `nonce`, `ciphertext`, `tag`, `network`, and `address`.
   - The plaintext is the normalized mnemonic, encrypted with **AES-256-GCM**.
   - The AAD binds the version, network, address, and KDF params.
@@ -75,7 +75,7 @@ Times are Asia/Shanghai (UTC+8).
 - **ACL:** inherits the user profile's permissions. Explicit ACL hardening is TBD.
 
 ## 5. Logs, telemetry, updates
-- **Log:** `%LOCALAPPDATA%\KaspaDesktopWallet\logs\wallet-YYYYMMDD.log`. It records only connection warnings, broadcast tx ids, and errors.
+- **Log:** `%LOCALAPPDATA%\KasNetWallet\logs\wallet-YYYYMMDD.log`. It records only connection warnings, broadcast tx ids, and errors.
   - Every line goes through `SecretRedactor`, which masks xprv/kprv/ktrv, hex runs of 64+ characters, and runs of 12+ BIP39 words.
   - Exceptions are logged as type + message only. Unit tests cover this.
   - Note: because the redactor masks all 64+ hex runs, tx ids appear as `[REDACTED]` in the log.
