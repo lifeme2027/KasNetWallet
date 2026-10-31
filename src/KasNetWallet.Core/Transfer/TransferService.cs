@@ -33,6 +33,17 @@ public static class TransferService
     internal const ulong FoldToleranceSompi = 1_000;
     private const int MaxExtraInputTries = 64;
 
+    /// <summary>
+    /// F3: folds within 5% below MinimumChange are blocked instead of folded. Around the boundary NKaspa's own outcome
+    /// (fit / fold / fold-cap refusal) flips with tiny amount changes; this band makes the wallet's result stable.
+    /// </summary>
+    internal static ulong FoldBlockThreshold(ulong minimumChange) => minimumChange - minimumChange / 20;
+
+    internal static string ChangeBlockedText(ulong? folded) =>
+        "Blocked: the change" + (folded is ulong f && f > 0 ? $" (about {Kas.Format(f)} KAS)" : "") +
+        " is too small to be its own output — a change output that small has high storage mass (KIP-9) and exceeds the transaction mass limit — " +
+        "and too large to burn as fee. Adding another UTXO did not help. Change the amount by about 0.05 KAS, or use Send max.";
+
     private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange, ulong NkFolded = 0)
     {
         /// <summary>Change folded into the fee: NKaspa's own report (5c49251 FoldedChange), or our fee − expected check (defense in depth).</summary>
@@ -155,10 +166,10 @@ public static class TransferService
         }
 
         var addedInputs = 0;
-        if (built is null || (built.Folded > 0 && built.Folded < built.MinimumChange))
+        // F2: also retry when the folded change is at/above MinimumChange (or inside the F3 guard band):
+        // one extra input usually lets the change become a valid output.
+        if (built is null || built.Folded > 0)
         {
-            // Dust change, or (NKaspa 5c49251) a change output that cannot fit and is too large to fold:
-            // try adding one more input so the change becomes a valid output (N3).
             var selected = built is null ? Array.Empty<Coin>() : built.Tx.Inputs.Select(i => c.Ordered.First(x => x.Outpoint.Equals(i.PreviousOutpoint))).ToArray();
             var rest = c.Ordered.Where(x => !selected.Contains(x)).OrderBy(x => x.Amount.Sompi).Take(MaxExtraInputTries);
             foreach (var extra in rest)
@@ -169,18 +180,10 @@ public static class TransferService
         }
         if (built is null && amountSompi < SmallAmountThreshold(c))
             throw new TransferException(SmallAmountText(c, amountSompi) + " The change output cannot fit either, and folding it into the fee would burn too much KAS; to empty the wallet use Send max.");
-        if (built is null)
-            throw new TransferException(
-                "Blocked: the change output does not fit the mass limit, and folding it into the fee would burn too much KAS " +
-                "(very small payments from large UTXOs create high storage mass). Try a larger amount, or use Send max.");
-
-        if (built.Folded >= built.MinimumChange)
-        {
-            // N4 (NKaspa): change would be valid but a change output would exceed the mass limit, so the whole change is burned as fee. Block.
-            throw new TransferException(
-                $"Blocked: this transaction would burn {Kas.Format(built.Folded)} KAS of change as fee, because adding a change output exceeds the mass limit " +
-                "(very small payments from large UTXOs create high storage mass). Try a larger amount, or use Send max.");
-        }
+        // F3: one deterministic rule near the MinimumChange boundary. NKaspa's fold-cap refusal (built == null) and any fold
+        // at or above FoldBlockThreshold give the same block; only folds clearly below it are folded with a warning.
+        if (built is null || built.Folded >= FoldBlockThreshold(built.MinimumChange))
+            throw new TransferException(ChangeBlockedText(built?.Folded));
         return Finish(c, built, amountSompi, feePolicy ?? FeePolicy.Default, false, addedInputs, coins.Count);
     }
 

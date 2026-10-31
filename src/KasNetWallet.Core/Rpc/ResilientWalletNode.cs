@@ -68,7 +68,19 @@ public sealed class ResilientWalletNode : IWalletNode
 
     private static bool IsTransient(Exception ex) =>
         ex is OperationCanceledException or TimeoutException or System.Net.WebSockets.WebSocketException or IOException
-            or System.Net.Http.HttpRequestException or ObjectDisposedException;
+            or System.Net.Http.HttpRequestException or ObjectDisposedException || IsDeadConnection(ex);
+
+    /// <summary>
+    /// F1: NKaspa closes the socket and throws InvalidOperationException for an oversized (&gt;16 MiB) frame,
+    /// and later calls throw InvalidOperationException "WebSocket is not connected". Both mean the
+    /// connection is dead and must be rebuilt.
+    /// </summary>
+    internal static bool IsDeadConnection(Exception ex) =>
+        ex is InvalidOperationException ioe && ioe.Message is { } m
+            && m.Contains("WebSocket", StringComparison.OrdinalIgnoreCase)
+            && (m.Contains("exceeds the maximum", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("not connected", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("closed", StringComparison.OrdinalIgnoreCase));
 
     private async Task<IWalletNode> EnsureAsync(CancellationToken ct)
     {

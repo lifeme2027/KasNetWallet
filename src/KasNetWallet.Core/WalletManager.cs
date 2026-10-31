@@ -189,13 +189,45 @@ public sealed class WalletManager : IAsyncDisposable
         return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeePolicy, await CurrentMassPolicyAsync(ct));
     }
 
-    /// <summary>Settings mass policy plus the node's virtual DAA score (NKaspa Network.MassPolicyAt picks pre/post-Toccata rules).</summary>
+    private ulong _highestDaaSeen;
+
+    /// <summary>
+    /// F4: the DAA score below which a node is certainly stale: both networks activated Toccata long ago
+    /// (rusty-kaspa params: mainnet 474,165,565, testnet-10 467,579,632).
+    /// </summary>
+    internal static ulong StaleDaaFloor(WalletNetwork n) => n switch
+    {
+        WalletNetwork.Mainnet => 474_165_565,
+        WalletNetwork.Testnet10 => 467_579_632,
+        _ => 0,
+    };
+
+    /// <summary>F4: refuses to build against an unsynced node or one whose DAA score is stale (0, below the network floor,
+    /// or lower than a score this session already saw).</summary>
+    internal static void EnsureNodeFresh(NodeStatus st, WalletNetwork n, ulong highestSeen)
+    {
+        if (!st.IsSynced)
+            throw new TransferException("The node is not synced yet, so fees and mass rules could be wrong. Wait until it is synced, or connect to another node.");
+        if (st.VirtualDaaScore == 0 || st.VirtualDaaScore < StaleDaaFloor(n) || st.VirtualDaaScore < highestSeen)
+            throw new TransferException($"The node's DAA score ({st.VirtualDaaScore}) is out of date" +
+                (highestSeen > st.VirtualDaaScore ? $" (lower than {highestSeen} seen earlier)" : "") +
+                ", so the transaction could be built with the wrong fee rules. Connect to an up-to-date node and try again.");
+    }
+
+    /// <summary>Settings mass policy plus the node's virtual DAA score (NKaspa Network.MassPolicyAt picks pre/post-Toccata rules).
+    /// F4: the node must be synced with a fresh DAA score, otherwise building is blocked.</summary>
     private async Task<MassPolicy> CurrentMassPolicyAsync(CancellationToken ct)
     {
-        ulong? daa = null;
-        try { daa = (await Node.GetStatusAsync(ct)).VirtualDaaScore; }
-        catch (Exception ex) when (ex is not OperationCanceledException) { WalletLog.Warn("DAA score unavailable; using the default mass policy."); }
-        return Settings.MassPolicyFor(Settings.Network).WithDaaScore(daa);
+        NodeStatus st;
+        try { st = await Node.GetStatusAsync(ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            WalletLog.Warn("Node status unavailable before build: " + ex.GetType().Name);
+            throw new TransferException("Cannot read the node's sync status and DAA score, so the transaction was not built. Check the connection and try again.");
+        }
+        EnsureNodeFresh(st, Settings.Network, _highestDaaSeen);
+        _highestDaaSeen = Math.Max(_highestDaaSeen, st.VirtualDaaScore);
+        return Settings.MassPolicyFor(Settings.Network).WithDaaScore(st.VirtualDaaScore);
     }
 
     /// <summary>N2: Send max — amount = spendable balance − fee, no change output.</summary>

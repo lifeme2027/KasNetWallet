@@ -157,3 +157,11 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **Wallet file format:** unchanged. Keystore, settings and history JSON are byte-compatible; no AAD or version field contains the product name.
 - **Data folder:** the default is now `%APPDATA%\KasNetWallet`. On first start, if that folder does not exist and the old `%APPDATA%\KaspaDesktopWallet` does, `WalletSettings.MigrateLegacyDirectory` copies all files into `KasNetWallet.migrating` and then renames it atomically to `KasNetWallet`. The old folder is **left in place** as a backup (never deleted). If the copy fails (I/O or permissions), the app keeps using the old folder so existing wallets still open.
 - **Log folder:** new logs go to `%LOCALAPPDATA%\KasNetWallet\logs`; old logs are not migrated (they hold no wallet state).
+
+## D21. Retest 0c7e556 fixes (F1–F5)
+
+- **F1:** `ResilientWalletNode.IsDeadConnection` — an `InvalidOperationException` whose message mentions WebSocket plus "exceeds the maximum", "not connected" or "closed" is transient (drop and reconnect). Other `InvalidOperationException`s are not retried.
+- **F2:** the extra-input retry now runs for any folded change (not only below `MinimumChange`). The block message describes the real cause (change too small for its own output, too large to burn).
+- **F3:** `FoldBlockThreshold = MinimumChange − MinimumChange/20`. Folds at or above it, and NKaspa fold-cap refusals, give one block message; this removes the oscillation between BLOCK-nofit / FOLD+WARN / BLOCK-burn. Trade-off: change in [0.95, 1.0) × MinimumChange that used to fold with a warning is now blocked (conservative).
+- **F4:** `WalletManager.EnsureNodeFresh` blocks building when the node is unsynced, the DAA score is 0, below the network's Toccata activation (both networks activated), or lower than the highest score seen this session. Status read failure also blocks (previously fell back to the default policy).
+- **F5:** the wallet keeps rejecting format (Cf) characters, now with an explicit message naming the word and code point; NKaspa strips them. Documented in FOR-TESTERS §11d.

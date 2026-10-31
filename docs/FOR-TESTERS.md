@@ -180,6 +180,13 @@ Times are Asia/Shanghai (UTC+8).
 - **Logs and errors:** `ExtKey.ToString()` and `Mnemonic.ToString()` no longer contain secrets.
 - **wRPC:** frames above 16 MiB are refused. The connect and request timeouts follow `RpcTimeoutSeconds`.
 
+## 11d. Retest 0c7e556 fixes (F1–F5)
+- **F1:** `ResilientWalletNode` treats NKaspa's `InvalidOperationException` for an oversized (>16 MiB) WebSocket frame, and the follow-up "WebSocket is not connected", as a dead connection: it drops the socket and reconnects with backoff.
+- **F2:** when the change lands just around `MinimumChange` (tn10 ≈ 1,958,800–2,000,004 sompi), the wallet first tries adding one more UTXO. If that does not help, the block message now says the change is *too small to be its own output* (storage mass) and too large to burn as fee — not "change output exceeds the mass limit".
+- **F3:** one deterministic rule near the boundary: a fold of ≥ 95% of `MinimumChange` (or NKaspa's fold-cap refusal) is always blocked; only smaller change is folded with a warning. With forced pre-Toccata the 9,997,964–10,000,000 band is now always "blocked", and outcomes go fold → block → normal change monotonically.
+- **F4:** before building (normal send and Send max), the node must report `IsSynced=true` and a DAA score that is non-zero, at or above the Toccata activation (mainnet 474,165,565 / tn10 467,579,632), and not lower than a score seen earlier in the session. Otherwise building is blocked with a message. If the status cannot be read, building is blocked too.
+- **F5 — zero-width characters, wallet vs library:** the **wallet** (`MnemonicService.Normalize`, used by every UI path) **rejects** any Unicode format character (U+200B/200C/200D, U+FEFF BOM, U+00AD, …) with "Word #N of the recovery phrase contains an invisible character (U+XXXX …)". **NKaspa** `Mnemonic.Parse` **strips** them silently and accepts the phrase. This difference is intentional: the wallet never uses a phrase different from what the user typed. Code that calls NKaspa directly gets the lenient behaviour.
+
 ## 12. UI languages
 English only. The amount format is invariant: always `.`, 8 decimal places, no scientific notation. zh-CN is TBD.
 

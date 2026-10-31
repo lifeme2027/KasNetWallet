@@ -17,6 +17,13 @@ public static class MnemonicService
     public static string Normalize(string phrase)
     {
         if (string.IsNullOrWhiteSpace(phrase)) throw new FormatException("Mnemonic is empty.");
+        // F5: zero-width / invisible format characters (Unicode Cf: U+200B/C/D, U+FEFF BOM, U+00AD soft hyphen, ...) are
+        // REJECTED, not stripped, so the phrase the user confirms is exactly the phrase that is used. NKaspa's Mnemonic.Parse
+        // strips them instead (library-level leniency); see docs/FOR-TESTERS.md.
+        for (var i = 0; i < phrase.Length; i++)
+            if (char.GetUnicodeCategory(phrase[i]) == System.Globalization.UnicodeCategory.Format)
+                throw new FormatException($"Word #{phrase[..i].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length + (i > 0 && !char.IsWhiteSpace(phrase[i - 1]) ? 0 : 1)} of the recovery phrase contains an invisible character (U+{(int)phrase[i]:X4}, e.g. a zero-width space or BOM), " +
+                    "usually from copy-paste. Retype the words by hand or paste them into a plain-text editor first; invisible characters are not removed automatically.");
         var words = phrase.Normalize(System.Text.NormalizationForm.FormKC).Trim().ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length is not (12 or 15 or 18 or 21 or 24)) throw new FormatException($"Mnemonic must have 12, 15, 18, 21 or 24 words (got {words.Length}).");
         // Zero-width chars / BOM are not whitespace: they stay inside a word and are rejected below (KW-016).
