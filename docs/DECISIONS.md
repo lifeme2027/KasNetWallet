@@ -105,3 +105,12 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **KDW-03 / KDW-02:** `EnableUnsafeBinaryFormatterSerialization=false`, `PathMap` and `Deterministic` are set in Directory.Build.props.
 - **KDW-10:** the redactor also treats `, - . " [ ] ( ) : ; / |`, digits and numbering as separators. These structured runs are masked from 8 words, while plain space runs still need 12. Mixed-case base64 runs of 43 or more characters are masked; bech32 addresses are lowercase, so they stay readable.
 - **Submit timeout:** reported as `TransferStatusUnknownException` ("status unknown, refresh"), and the tx is still tracked.
+
+## D17 — Retest round 2 (kdw-mvp1-retest N1–N7, 2026-10-31) — supersedes the D16 fee cap
+- Fixed-amount fee cap removed. Fee sanity = rate check (fee ÷ fee mass ≤ 10 × max(node estimate, 100)) plus an absolute "high fee" threshold; both are **warnings** that need explicit acknowledgement (`warningsAcknowledged` on broadcast), never hard rejects.
+- Dust change: retry with one extra UTXO (smallest first, up to 64 tries) via `MustSpend`; fold only if nothing works (warning + ack).
+- NKaspa R11: folded change ≥ `MinimumChange` (detected as fee − expected fee) is a hard block.
+- Send max: `SpendAllCoins` + `SendFees(fee)` iterated until fee == expected fee; largest-first UTXO subset when over the mass cap.
+- Unlock throttle: corrupt → reset; future timestamp → clamp (with UI notice). Security trade-off: an attacker with file write access could reset the counter, but such an attacker can already copy the keystore offline, so the throttle is only a UI speed bump.
+- Settings are range-validated on load (`WalletSettings.Normalize`).
+

@@ -36,3 +36,9 @@ Wallet workaround: `SecretRedactor` on every log line, and the wallet never call
   - `SecretText`/`HdAccount` return `[REDACTED]` from ToString and refuse JSON.
   - Core never calls ToString on Mnemonic/ExtKey/Key; a test guards this.
   - The log redactor runs on every log line.
+
+## R11 — Change silently burned when a change output would exceed the mass limit (retest N4)
+`TransactionBuilder.Materialize`: when adding the change output makes the tx exceed `MaximumMass`/`MassLimits`, the **whole change** is added to the fee (`fee += change`), even when change ≥ `MinimumChange`. Observed: tn10, 0.1 KAS from one 50 KAS UTXO at 150 sompi/gram → ~49.9 KAS fee.
+Request: throw (e.g. `ChangeExceedsMassLimitException`) or expose a flag, and never fold change ≥ `MinimumChange` silently; also expose the "folded change" amount on the built result.
+Wallet workaround (done): after building, compute expected fee from `MassCalculator.Calculate` at the chosen rate; if change == 0 and fee − expected ≥ `MinimumChange` the transfer is blocked; smaller folds get one extra-input retry, then a warning that must be acknowledged.
+

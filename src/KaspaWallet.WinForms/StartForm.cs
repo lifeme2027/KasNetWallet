@@ -76,6 +76,12 @@ internal sealed class StartForm : Form
         else _info.Text = "Wallet file problem: " + err + $"\nFile: {probe.KeystorePath}";
     }
 
+    private void ShowThrottleNotice(WalletManager mgr)
+    {
+        if (mgr.ThrottleNotice is string n)
+            MessageBox.Show(this, n + " You can continue normally.", "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
     private void DoUnlock()
     {
         WalletManager mgr;
@@ -86,13 +92,13 @@ internal sealed class StartForm : Form
             try
             {
                 UseWaitCursor = true;
-                mgr.Unlock(dlg.Password);
+                try { mgr.Unlock(dlg.Password); } finally { ShowThrottleNotice(mgr); }
                 Manager = mgr; DialogResult = DialogResult.OK; return;
             }
             catch (WrongPasswordException) { MessageBox.Show(this, "Wrong password.", "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             catch (UnlockThrottledException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             catch (ArgumentException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
-            catch (KeystoreCorruptException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+            catch (IOException ex) { MessageBox.Show(this, SecretRedactor.Redact(ex.Message), "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
             catch (Exception ex) { ErrorReporter.Show(this, "Unlock failed", ex); return; }
             finally { UseWaitCursor = false; dlg.Clear(); }
         }

@@ -81,14 +81,6 @@ public class TransferTests
     }
 
     [Fact]
-    public void Build_MaxFeeCap_Enforced()
-    {
-        using var acc = Acc();
-        var coin = TestData.FakeCoin(acc.Address, 5 * Kas.SompiPerKas, 1);
-        Assert.Throws<TransferException>(() => TransferService.Build(acc, new[] { coin }, TestData.OtherMainnet, Kas.SompiPerKas, maxFeeSompi: 1));
-    }
-
-    [Fact]
     public void Build_NodeEstimateBelowFloor_ClampedToFloor()
     {
         using var acc = Acc();
@@ -130,7 +122,7 @@ public class TransferTests
     public void Kas_Format() => Assert.Equal("1.25000000", Kas.Format(125_000_000));
 
     /// <summary>In-memory node; never touches the network.</summary>
-    private sealed class FakeNode : IWalletNode
+    internal sealed class FakeNode : IWalletNode
     {
         private readonly string _net;
         public FakeNode(string net) => _net = net;

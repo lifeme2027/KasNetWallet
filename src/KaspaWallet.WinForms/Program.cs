@@ -15,7 +15,10 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         var dir = WalletSettings.DefaultDirectory;
         var settingsPath = Path.Combine(dir, "settings.json");
-        var settings = WalletSettings.Load(settingsPath);
+        var settings = WalletSettings.Load(settingsPath, out var notices);
+        if (notices.Count > 0)
+            MessageBox.Show(SecretRedactor.Redact("Some settings were invalid and have been corrected:\n\n" + string.Join("\n", notices)),
+                "Settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
         using var start = new StartForm(settings, settingsPath);
         if (start.ShowDialog() != DialogResult.OK || start.Manager is null) return;
         Application.Run(new MainForm(start.Manager));

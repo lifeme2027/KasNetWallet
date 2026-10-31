@@ -34,9 +34,22 @@ public sealed class WalletManager : IAsyncDisposable
         if (!KeystoreExists) { error = "No wallet file."; return false; }
         try { file = WalletKeystore.Load(KeystorePath); return true; }
         catch (KeystoreCorruptException ex) { error = ex.Message; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Cannot read the wallet file: " + ex.GetType().Name; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Cannot read the wallet file (" + ex.GetType().Name + "). Check file permissions or restore it from backup."; }
         return false;
     }
+
+    /// <summary>Loads the keystore or throws a single (non-nested) user-presentable exception (N5).</summary>
+    private KeystoreFile LoadKeystoreOrThrow()
+    {
+        if (!KeystoreExists) throw new FileNotFoundException("No wallet file.");
+        try { return WalletKeystore.Load(KeystorePath); }
+        catch (KeystoreCorruptException) { throw; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { throw new IOException("Cannot read the wallet file (" + ex.GetType().Name + "). Check file permissions or restore it from backup.", ex); }
+    }
+
+    /// <summary>Non-null when the last Unlock() had to auto-recover the throttle state (N1). UI shows it once.</summary>
+    public string? ThrottleNotice { get; private set; }
 
     /// <summary>
     /// NEW wallet: requires a passed <see cref="BackupChallenge"/> for this exact mnemonic before anything is written (KDW-04).
@@ -64,14 +77,15 @@ public sealed class WalletManager : IAsyncDisposable
     public void Unlock(string password)
     {
         Lock();
-        var state = UnlockThrottle.Load(ThrottlePath);
+        var state = UnlockThrottle.Load(ThrottlePath, DateTimeOffset.UtcNow, out var notice);
+        ThrottleNotice = notice;
         var remaining = state.Remaining(DateTimeOffset.UtcNow);
         if (remaining > TimeSpan.Zero) throw new UnlockThrottledException(remaining);
         var pw = NormalizePassword(password, checkStrength: false);
-        if (!TryLoadKeystore(out var file, out var err)) throw new KeystoreCorruptException(err ?? "unreadable");
+        var file = LoadKeystoreOrThrow();
         try
         {
-            _account = WalletKeystore.Unlock(file!, pw);
+            _account = WalletKeystore.Unlock(file, pw);
             UnlockThrottle.Reset(ThrottlePath);
         }
         catch (WrongPasswordException) { state.RecordFailure(DateTimeOffset.UtcNow); state.Save(ThrottlePath); throw; }
@@ -91,8 +105,8 @@ public sealed class WalletManager : IAsyncDisposable
     /// <summary>Re-encrypts the keystore under a new password (fresh salt/nonce). Old password stops working.</summary>
     public void ChangePassword(string oldPassword, string newPassword)
     {
-        if (!TryLoadKeystore(out var file, out var err)) throw new KeystoreCorruptException(err ?? "unreadable");
-        var phrase = WalletKeystore.Decrypt(file!, NormalizePassword(oldPassword, false));
+        var file = LoadKeystoreOrThrow();
+        var phrase = WalletKeystore.Decrypt(file, NormalizePassword(oldPassword, false));
         var updated = WalletKeystore.Encrypt(phrase, NormalizePassword(newPassword), Settings.Network, Kdf);
         WalletKeystore.Save(updated, KeystorePath);
     }
@@ -151,15 +165,23 @@ public sealed class WalletManager : IAsyncDisposable
     {
         var coins = await Node.GetCoinsAsync(Account.Address, ct);
         double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
-        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeeCapFor(amountSompi), Settings.MassPolicyFor(Settings.Network));
+        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeePolicy, Settings.MassPolicyFor(Settings.Network));
     }
 
-    public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default)
+    /// <summary>N2: Send max — amount = spendable balance − fee, no change output.</summary>
+    public async Task<TransferPlan> PrepareSendMaxAsync(string to, FeeMode mode, CancellationToken ct = default)
+    {
+        var coins = await Node.GetCoinsAsync(Account.Address, ct);
+        double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
+        return TransferService.BuildSendMax(Account, coins, to, mode, rate, Settings.FeePolicy, Settings.MassPolicyFor(Settings.Network));
+    }
+
+    public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default, bool warningsAcknowledged = false)
     {
         if (plan.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled) throw new TransferException("Mainnet is disabled.");
         var st = await Node.GetStatusAsync(ct);
         string id;
-        try { id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct); }
+        try { id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct, warningsAcknowledged); }
         catch (TransferStatusUnknownException ex)
         {
             // Track it anyway so Recheck can resolve Accepted/Dropped.

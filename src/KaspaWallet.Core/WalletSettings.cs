@@ -12,11 +12,8 @@ public sealed class WalletSettings
     public string? WrpcUrl { get; set; }
     /// <summary>Per-network mass policy (Toccata before/after). See <see cref="MassPolicy"/>.</summary>
     public Dictionary<WalletNetwork, MassPolicy> MassPolicies { get; set; } = new();
-    /// <summary>Fee cap: max(MaxFeeFloorSompi, amount × MaxFeePercent / 100). Transfers above it are rejected (KDW-11).</summary>
-    public ulong MaxFeeFloorSompi { get; set; } = 1_000_000; // 0.01 KAS
-    public double MaxFeePercent { get; set; } = 1.0;
-    public ulong FeeCapFor(ulong amountSompi) =>
-        Math.Max(MaxFeeFloorSompi, (ulong)Math.Min(ulong.MaxValue / 2, amountSompi * Math.Max(0, MaxFeePercent) / 100.0));
+    /// <summary>Fee warning policy (N3): no hard fixed-amount cap; abnormal fees need explicit acknowledgement.</summary>
+    public Transfer.FeePolicy FeePolicy { get; set; } = new();
     public int RpcTimeoutSeconds { get; set; } = 15;
     public int ClipboardClearSeconds { get; set; } = 30;
     public int AutoLockMinutes { get; set; } = 5;
@@ -32,15 +29,53 @@ public sealed class WalletSettings
     public static string DefaultDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KaspaDesktopWallet");
 
-    public static WalletSettings Load(string path)
+    public static WalletSettings Load(string path) => Load(path, out _);
+
+    public static WalletSettings Load(string path, out IReadOnlyList<string> notices)
     {
+        notices = Array.Empty<string>();
         if (!File.Exists(path)) return new WalletSettings();
-        try { return JsonSerializer.Deserialize<WalletSettings>(File.ReadAllText(path), Opts) ?? new WalletSettings(); }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
+        WalletSettings s;
+        try { s = JsonSerializer.Deserialize<WalletSettings>(File.ReadAllText(path), Opts) ?? new WalletSettings(); }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException or IOException)
         {
             WalletLog.Warn("settings.json is unreadable; using defaults (testnet-10, mainnet disabled).");
+            notices = new[] { "settings.json was unreadable; defaults are used (testnet-10, mainnet disabled)." };
             return new WalletSettings();
         }
+        var n = s.Normalize();
+        foreach (var x in n) WalletLog.Warn("settings: " + x);
+        notices = n;
+        return s;
+    }
+
+    /// <summary>N6: range-validates every value; out-of-range values are reset to the default and reported.</summary>
+    public IReadOnlyList<string> Normalize()
+    {
+        var d = new WalletSettings();
+        var notes = new List<string>();
+        void Fix<T>(string name, T value, bool ok, Action reset, string range)
+        { if (!ok) { reset(); notes.Add($"{name}={value} is outside {range}; reset to default."); } }
+        Fix(nameof(Network), Network, Enum.IsDefined(Network), () => Network = d.Network, "known networks");
+        Fix(nameof(RpcTimeoutSeconds), RpcTimeoutSeconds, RpcTimeoutSeconds is >= 1 and <= 300, () => RpcTimeoutSeconds = d.RpcTimeoutSeconds, "1..300");
+        Fix(nameof(ClipboardClearSeconds), ClipboardClearSeconds, ClipboardClearSeconds is >= 5 and <= 600, () => ClipboardClearSeconds = d.ClipboardClearSeconds, "5..600");
+        Fix(nameof(AutoLockMinutes), AutoLockMinutes, AutoLockMinutes is >= 1 and <= 1440, () => AutoLockMinutes = d.AutoLockMinutes, "1..1440");
+        Fix(nameof(ConfirmationDepthDaa), ConfirmationDepthDaa, ConfirmationDepthDaa is >= 1 and <= 1_000_000, () => ConfirmationDepthDaa = d.ConfirmationDepthDaa, "1..1000000");
+        if (WrpcUrl is { Length: > 0 } u && !(Uri.TryCreate(u, UriKind.Absolute, out var uri) && (uri.Scheme is "ws" or "wss")))
+        { notes.Add("WrpcUrl is not a ws:// or wss:// URL; using the network default."); WrpcUrl = null; }
+        FeePolicy ??= new();
+        var fp = FeePolicy; var dp = new Transfer.FeePolicy();
+        Fix("FeePolicy.RateMultiplier", fp.RateMultiplier, double.IsFinite(fp.RateMultiplier) && fp.RateMultiplier >= 1.5 && fp.RateMultiplier <= 1000, () => fp.RateMultiplier = dp.RateMultiplier, "1.5..1000");
+        Fix("FeePolicy.WarnPercent", fp.WarnPercent, double.IsFinite(fp.WarnPercent) && fp.WarnPercent >= 0.01 && fp.WarnPercent <= 100, () => fp.WarnPercent = dp.WarnPercent, "0.01..100");
+        Fix("FeePolicy.WarnFloorSompi", fp.WarnFloorSompi, fp.WarnFloorSompi >= 10_000 && fp.WarnFloorSompi <= 100_000_000_000, () => fp.WarnFloorSompi = dp.WarnFloorSompi, "10000..100000000000");
+        MassPolicies ??= new();
+        foreach (var (net, mp) in MassPolicies.ToArray())
+        {
+            if (mp is null) { MassPolicies.Remove(net); notes.Add($"MassPolicies[{net}] was null; removed."); continue; }
+            if (mp.MaxTransactionMass is ulong m && (m < 5_000 || m > 1_000_000))
+            { mp.MaxTransactionMass = null; notes.Add($"MassPolicies[{net}].MaxTransactionMass={m} is outside 5000..1000000; reset."); }
+        }
+        return notes;
     }
 
     public void Save(string path)

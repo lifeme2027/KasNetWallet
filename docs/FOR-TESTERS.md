@@ -138,16 +138,32 @@ Times are Asia/Shanghai (UTC+8).
   - The default is false (conservative). The Toccata activation status on testnet/mainnet is **TBD**.
   - Over the cap, the send is rejected with "consolidate UTXOs or send less".
 - **Fees:** MinimumRelay (100 sompi/gram, the NKaspa floor) or NodeEstimate (normal bucket).
-- **Fee cap (KDW-11):** cap = max(`MaxFeeFloorSompi`, amount × `MaxFeePercent`%). The default is max(0.01 KAS, 1%). Both values can be changed in settings.json, and a fee above the cap is **rejected** with the reason.
-- **Change folded into the fee (KDW-11):** change below NKaspa's minimum change (about 0.1 KAS pre-Toccata) cannot become a change output.
-  - The confirm dialog shows `WARNING: change of X KAS … ADDED TO THE FEE`.
-  - A **second** confirmation is required.
-  - Under the default cap this usually exceeds the limit and is rejected. Adjust the amount or raise the cap.
+- **No fixed-amount fee cap (retest N3).** Fees are checked as a *rate*. Abnormal fees produce a **warning**; you can still send after a second confirmation (broadcast is refused unless the warning was acknowledged).
+  - "Abnormally high fee": total fee ÷ fee mass > `FeePolicy.RateMultiplier` (default 10) × max(node normal estimate, 100) sompi/gram.
+  - "High fee": total fee > max(`FeePolicy.WarnFloorSompi` = 0.01 KAS, `FeePolicy.WarnPercent` = 1% of the amount), while the rate itself is normal (large tx).
+  - Ranges (settings.json, see §14): RateMultiplier 1.5–1000, WarnPercent 0.01–100, WarnFloorSompi 10000–100000000000.
+- **Dust change (N3):** if the change would be below NKaspa's minimum change (~0.1 KAS pre-Toccata), the wallet first retries with **one extra UTXO** so the change becomes a valid output (the summary then says "added 1 extra input …"). Only if no UTXO helps, the dialog shows `Change of X KAS … ADDED TO THE FEE` and an extra confirmation is needed.
+- **Burned change is blocked (N4, NKaspa bug R11):** if NKaspa would drop a *valid* change (≥ minimum change) into the fee because the change output would exceed the mass limit (e.g. 0.1 KAS from a single 50 KAS UTXO at 150 sompi/gram), the wallet compares fee vs expected fee and **refuses** with "Blocked: this transaction would burn X KAS of change …". Try a larger amount, or Send max.
+- **Send max (N2):** button "Send max…". Amount = sum of spent UTXOs − fee, exactly one output, no change. If all UTXOs together exceed the mass cap, it uses the largest UTXOs that fit; the summary shows "Inputs: N of M UTXO". Error texts now point to Send max instead of "send the full balance".
 - **Submit timeout:** shows "Submission status unknown … refresh". The tx is recorded in history as Pending. Re-submitting the same signed tx cannot double-spend.
-  - Low/high priority, a custom fee, and Max/sweep are TBD.
+  - Low/high priority and a custom fee are TBD.
+
+## 11a. Unlock throttle recovery (N1)
+- `unlock-state.<net>.json` unreadable/corrupt → reset to 0 failures, file deleted, info dialog "…was unreadable and has been reset".
+- Last-failure time in the future (clock change/tampering) → clamped to now and re-saved, info dialog; no permanent lock. Negative/huge failure counts are clamped to 0–1000.
 
 ## 12. UI languages
 English only. The amount format is invariant: always `.`, 8 decimal places, no scientific notation. zh-CN is TBD.
 
 ## 13. Not implemented (expect failures)
 QR code, history rows for incoming txs, explorer links, a change-password UI, mnemonic re-display, an installer/uninstaller, i18n, and full accessibility names/Narrator review.
+
+## 14. Settings ranges (N6)
+Out-of-range values in settings.json are reset to the default on start and listed in a "Settings" dialog (also logged):
+RpcTimeoutSeconds 1–300 · ClipboardClearSeconds 5–600 · AutoLockMinutes 1–1440 · ConfirmationDepthDaa 1–1000000 · Network must be a known value · WrpcUrl must be ws:// or wss:// · MassPolicies[*].MaxTransactionMass 5000–1000000 · FeePolicy as in §11.
+The old `MaxFeeFloorSompi`/`MaxFeePercent` keys are ignored.
+
+## 15. Error messages and redaction (N5, N7)
+- Nested errors are no longer duplicated ("corrupted or unsupported … Restore it from backup" appears once).
+- The redactor also masks base64url values (`-`/`_`, ≥43 chars, mixed case) and mnemonic word runs separated by wide gaps (up to 48 separator characters: spaces, tabs, newlines, `|`, bullets, numbering).
+

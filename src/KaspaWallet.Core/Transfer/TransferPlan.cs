@@ -6,11 +6,13 @@ namespace KaspaWallet.Core.Transfer;
 public sealed class TransferPlan
 {
     internal TransferPlan(Transaction tx, WalletNetwork network, string from, string to, ulong amountSompi, ulong feeSompi,
-        ulong changeSompi, ulong inputSompi, int inputCount, ulong mass, ulong foldedChangeSompi = 0, ulong feeCapSompi = 0)
+        ulong changeSompi, ulong inputSompi, int inputCount, ulong mass, ulong foldedChangeSompi, IReadOnlyList<string> warnings,
+        bool isSendMax, int addedInputs, int availableCoins, ulong expectedFeeSompi)
     {
-        FoldedChangeSompi = foldedChangeSompi; FeeCapSompi = feeCapSompi;
         Transaction = tx; Network = network; From = from; To = to; AmountSompi = amountSompi; FeeSompi = feeSompi;
         ChangeSompi = changeSompi; InputSompi = inputSompi; InputCount = inputCount; Mass = mass;
+        FoldedChangeSompi = foldedChangeSompi; Warnings = warnings; IsSendMax = isSendMax; AddedInputsForChange = addedInputs;
+        AvailableCoins = availableCoins; ExpectedFeeSompi = expectedFeeSompi;
         TransactionId = tx.GetId().ToString();
     }
 
@@ -27,22 +29,22 @@ public sealed class TransferPlan
     public string TransactionId { get; }
     public bool Broadcast { get; internal set; }
 
-    /// <summary>Sompi that would have been change but was below the dust/minimum-change threshold and is paid as fee (KDW-11).</summary>
+    /// <summary>Dust change paid as fee after trying extra inputs (requires acknowledgement).</summary>
     public ulong FoldedChangeSompi { get; }
-    /// <summary>Fee cap applied when building (0 = none).</summary>
-    public ulong FeeCapSompi { get; }
-
-    public IReadOnlyList<string> Warnings => FoldedChangeSompi == 0 ? Array.Empty<string>() : new[]
-    {
-        $"WARNING: change of {Kas.Format(FoldedChangeSompi)} KAS is below the minimum change output and will be ADDED TO THE FEE (paid to miners, not returned to you). " +
-        "Send a slightly larger/smaller amount, or send your full balance, to avoid this."
-    };
+    /// <summary>Fee NKaspa should charge for this tx at the chosen rate, without folding.</summary>
+    public ulong ExpectedFeeSompi { get; }
+    public bool IsSendMax { get; }
+    public int AddedInputsForChange { get; }
+    public int AvailableCoins { get; }
+    /// <summary>Must be acknowledged by the user (second confirmation) before broadcast.</summary>
+    public IReadOnlyList<string> Warnings { get; }
 
     public string Summary() =>
-        $"Network: {Network}\nFrom: {From}\nTo: {To}\nAmount: {Kas.Format(AmountSompi)} KAS\nFee: {Kas.Format(FeeSompi)} KAS\n" +
-        $"Change: {Kas.Format(ChangeSompi)} KAS\nInputs: {InputCount} ({Kas.Format(InputSompi)} KAS)\nMass: {Mass}\nTx id: {TransactionId}" +
-        (FeeCapSompi > 0 ? $"\nFee cap: {Kas.Format(FeeCapSompi)} KAS" : "") +
-        string.Concat(Warnings.Select(w => "\n\n" + w));
+        $"Network: {Network}\nFrom: {From}\nTo: {To}\nAmount: {Kas.Format(AmountSompi)} KAS" + (IsSendMax ? " (Send max — no change)" : "") +
+        $"\nFee: {Kas.Format(FeeSompi)} KAS\nChange: {Kas.Format(ChangeSompi)} KAS\nInputs: {InputCount} of {AvailableCoins} UTXO ({Kas.Format(InputSompi)} KAS)" +
+        (AddedInputsForChange > 0 ? $"\n(added {AddedInputsForChange} extra input so the change is a valid output instead of being paid as fee)" : "") +
+        $"\nMass: {Mass}\nTx id: {TransactionId}" +
+        string.Concat(Warnings.Select(w => "\n\nWARNING: " + w));
 }
 
 public static class Kas

@@ -14,6 +14,7 @@ internal sealed class MainForm : Form
     private readonly TextBox _amount = new() { Width = 200 };
     private readonly ComboBox _fee = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
     private readonly Button _send = new() { Text = "Review & send…" };
+    private readonly Button _sendMax = new() { Text = "Send max…", AutoSize = true };
     private readonly Button _refresh = new() { Text = "Refresh" };
     private readonly Button _connect = new() { Text = "Connect" };
     private readonly Button _lock = new() { Text = "Lock" };
@@ -36,7 +37,7 @@ internal sealed class MainForm : Form
         g.Controls.Add(Theme.Label("Send to")); g.Controls.Add(_to);
         g.Controls.Add(Theme.Label("Amount (KAS)")); g.Controls.Add(_amount);
         g.Controls.Add(Theme.Label("Fee")); g.Controls.Add(_fee);
-        var actions = new FlowLayoutPanel { AutoSize = true }; actions.Controls.AddRange(new Control[] { _send, _refresh, _connect, _lock });
+        var actions = new FlowLayoutPanel { AutoSize = true }; actions.Controls.AddRange(new Control[] { _send, _sendMax, _refresh, _connect, _lock });
         g.Controls.Add(new Label()); g.Controls.Add(actions);
         var strip = new StatusStrip(); strip.Items.Add(_status); strip.Items.Add(_net);
         Controls.Add(g); Controls.Add(strip);
@@ -50,7 +51,8 @@ internal sealed class MainForm : Form
         Application.AddMessageFilter(new InputFilter(() => _lastInput = DateTime.UtcNow));
         _connect.Click += async (_, _) => await ConnectAsync();
         _refresh.Click += async (_, _) => await RefreshAsync();
-        _send.Click += async (_, _) => await SendAsync();
+        _send.Click += async (_, _) => await SendAsync(max: false);
+        _sendMax.Click += async (_, _) => await SendAsync(max: true);
         _lock.Click += (_, _) => DoLock("Locked. Restart to unlock.");
         Shown += async (_, _) => await ConnectAsync();
         FormClosed += async (_, _) => await _mgr.DisposeAsync();
@@ -60,7 +62,7 @@ internal sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _idle = new() { Interval = 15_000 };
     private DateTime _lastInput = DateTime.UtcNow;
 
-    private void DoLock(string msg) { _mgr.Lock(); _send.Enabled = false; SetStatus(msg); }
+    private void DoLock(string msg) { _mgr.Lock(); _send.Enabled = false; _sendMax.Enabled = false; SetStatus(msg); }
 
     private sealed class InputFilter(Action touch) : IMessageFilter
     {
@@ -82,7 +84,7 @@ internal sealed class MainForm : Form
         UseWaitCursor = true; Enabled = false;
         try { await work(); }
         catch (Exception ex) { SetStatus("Error: " + ex.Message); }
-        finally { UseWaitCursor = false; Enabled = true; _send.Enabled = _mgr.IsUnlocked; }
+        finally { UseWaitCursor = false; Enabled = true; _send.Enabled = _sendMax.Enabled = _mgr.IsUnlocked; }
     }
 
     private Task ConnectAsync() => Busy(async () =>
@@ -110,20 +112,30 @@ internal sealed class MainForm : Form
         await UpdateHistoryAsync(ct);
     }
 
-    private Task SendAsync() => Busy(async () =>
+    private Task SendAsync(bool max) => Busy(async () =>
     {
-        ulong sompi;
-        try { sompi = Kas.ParseKas(_amount.Text); } catch (FormatException ex) { SetStatus(ex.Message); return; }
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var plan = await _mgr.PrepareTransferAsync(_to.Text, sompi, (FeeMode)_fee.SelectedItem!, cts.Token);
+        TransferPlan plan;
+        if (max) plan = await _mgr.PrepareSendMaxAsync(_to.Text, (FeeMode)_fee.SelectedItem!, cts.Token);
+        else
+        {
+            ulong sompi;
+            try { sompi = Kas.ParseKas(_amount.Text); } catch (FormatException ex) { SetStatus(ex.Message); return; }
+            plan = await _mgr.PrepareTransferAsync(_to.Text, sompi, (FeeMode)_fee.SelectedItem!, cts.Token);
+        }
         var answer = MessageBox.Show(this, plan.Summary() + "\n\nBroadcast this transaction? This cannot be undone.",
-            "Confirm send", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            max ? "Confirm send max" : "Confirm send", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes) { SetStatus("Send cancelled."); return; }
-        if (plan.FoldedChangeSompi > 0 && MessageBox.Show(this, string.Join("\n", plan.Warnings) + "\n\nSend anyway and lose this change to the fee?",
-                "Small change goes to fee", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
-        { SetStatus("Send cancelled (change would go to fee)."); return; }
+        var ack = false;
+        if (plan.Warnings.Count > 0)
+        {
+            if (MessageBox.Show(this, string.Join("\n\n", plan.Warnings) + "\n\nI understand the fee shown above. Send anyway?",
+                    "Fee warning", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            { SetStatus("Send cancelled (fee warning)."); return; }
+            ack = true;
+        }
         if (plan.Network == WalletNetwork.Mainnet && !MainnetSendWarning.Confirm(this, plan)) { SetStatus("Mainnet send cancelled."); return; }
-        var id = await _mgr.BroadcastAsync(plan, userConfirmed: true, cts.Token);
+        var id = await _mgr.BroadcastAsync(plan, userConfirmed: true, cts.Token, warningsAcknowledged: ack);
         SetStatus($"Submitted tx {id}");
         _amount.Clear();
         await RefreshCore(cts.Token);

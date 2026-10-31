@@ -72,16 +72,19 @@ public static partial class SecretRedactor
 
     /// <summary>Runs using list punctuation/numbering are masked from this many words (KDW-10).</summary>
     public const int StructuredThreshold = 8;
+    public const int MaxGap = 48;
 
     private static bool IsSeparator(ReadOnlySpan<char> gap)
     {
-        if (gap.Length == 0 || gap.Length > 8) return false;
+        // N7: wide separators (padding, tabs, table borders, bullets) up to 48 chars; still only separator characters.
+        if (gap.Length == 0 || gap.Length > MaxGap) return false;
         foreach (var c in gap)
-            if (!(char.IsWhiteSpace(c) || char.IsDigit(c) || ",.-_;:|/\\\"'[](){}".Contains(c))) return false;
+            if (!(char.IsWhiteSpace(c) || char.IsDigit(c) || char.IsControl(c) || ",.-_;:|/\\\"'`[](){}<>*#~+=•·–—>".Contains(c))) return false;
         return true;
     }
 
-    [GeneratedRegex(@"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{43,}={0,2}(?![A-Za-z0-9+/=])", RegexOptions.CultureInvariant)]
+    // N7: standard base64 and base64url ('-', '_') alphabets.
+    [GeneratedRegex(@"(?<![A-Za-z0-9+/_\-])[A-Za-z0-9+/_\-]{43,}={0,2}(?![A-Za-z0-9+/_\-=])", RegexOptions.CultureInvariant)]
     private static partial Regex Base64Run();
 
     /// <summary>Masks base64 runs ≥43 chars (32-byte keys) that mix upper and lower case (bech32 addresses are lowercase).</summary>

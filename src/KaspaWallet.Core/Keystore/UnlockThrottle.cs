@@ -25,11 +25,40 @@ public sealed class UnlockThrottle
 
     public void RecordFailure(DateTimeOffset now) { Failures = Math.Min(Failures + 1, 1000); LastFailureUtc = now; }
 
-    public static UnlockThrottle Load(string path)
+    /// <summary>Back-compat overload (no notice).</summary>
+    public static UnlockThrottle Load(string path) => Load(path, DateTimeOffset.UtcNow, out _);
+
+    /// <summary>
+    /// N1: never locks permanently. Unreadable/corrupt state → reset to zero failures (file removed) with a notice.
+    /// Timestamp in the future (clock change / tampering) → clamped to now and re-saved, with a notice.
+    /// Out-of-range failure counts are clamped to 0..1000.
+    /// </summary>
+    public static UnlockThrottle Load(string path, DateTimeOffset now, out string? notice)
     {
-        try { return File.Exists(path) ? JsonSerializer.Deserialize<UnlockThrottle>(File.ReadAllText(path)) ?? new() : new(); }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
-        { return new UnlockThrottle { Failures = 3, LastFailureUtc = DateTimeOffset.UtcNow }; } // tampered state: fail safe (short wait)
+        notice = null;
+        if (!File.Exists(path)) return new();
+        UnlockThrottle? st;
+        try { st = JsonSerializer.Deserialize<UnlockThrottle>(File.ReadAllText(path)); }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        { st = null; }
+        if (st is null)
+        {
+            Reset(path);
+            notice = "The saved unlock-attempt counter was unreadable and has been reset.";
+            WalletLog.Warn("unlock-state file unreadable; reset.");
+            return new();
+        }
+        var changed = false;
+        if (st.Failures < 0 || st.Failures > 1000) { st.Failures = Math.Clamp(st.Failures, 0, 1000); changed = true; }
+        if (st.LastFailureUtc > now + TimeSpan.FromMinutes(1))
+        {
+            st.LastFailureUtc = now - st.Delay; // clamp: no remaining wait from a bogus future time
+            changed = true;
+            notice = "The saved unlock-attempt time was in the future (system clock changed?) and has been corrected.";
+            WalletLog.Warn("unlock-state timestamp in the future; clamped.");
+        }
+        if (changed) st.Save(path);
+        return st;
     }
 
     public void Save(string path)

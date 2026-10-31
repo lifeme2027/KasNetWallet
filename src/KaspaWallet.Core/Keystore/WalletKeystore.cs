@@ -13,7 +13,16 @@ public sealed class WrongPasswordException : Exception
 /// <summary>The wallet file is unreadable, tampered with, or in an unsupported format. Message is user-safe.</summary>
 public sealed class KeystoreCorruptException : IOException
 {
-    public KeystoreCorruptException(string detail) : base("The wallet file is corrupted or unsupported (" + detail + "). Restore it from backup or re-import your recovery phrase.") { }
+    private const string Tail = "Restore it from backup or re-import your recovery phrase.";
+    public KeystoreCorruptException(string detail) : base(Compose(detail)) { }
+
+    /// <summary>N5: never nest our own message inside itself.</summary>
+    private static string Compose(string detail)
+    {
+        detail = (detail ?? "unreadable").Trim();
+        if (detail.Contains(Tail, StringComparison.Ordinal)) return detail;
+        return "The wallet file is corrupted or unsupported (" + detail.TrimEnd('.') + "). " + Tail;
+    }
 }
 
 /// <summary>

@@ -9,10 +9,10 @@ namespace KaspaWallet.Core.Tests;
 /// <summary>Regression tests for the MVP-1 tester report (KDW-04/05/08/09/10/11, file mode).</summary>
 public class MvpReportFixTests
 {
-    private const string Pw = "correct horse 1";
+    internal const string Pw = "correct horse 1";
 
     private static string TempDir() { var d = Path.Combine(Path.GetTempPath(), "kdw-t-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d); return d; }
-    private static WalletManager Mgr(string dir) => new(dir, new WalletSettings { Network = WalletNetwork.Testnet10 }, KdfParameters.TestOnly);
+    internal static WalletManager Mgr(string dir) => new(dir, new WalletSettings { Network = WalletNetwork.Testnet10 }, KdfParameters.TestOnly);
     private static string[] Words => TestData.AbandonMnemonic.Split(' ');
 
     // ---------- KDW-04 backup verification ----------
@@ -75,7 +75,7 @@ public class MvpReportFixTests
     }
 
     // ---------- KDW-05 graceful unlock ----------
-    private static (string dir, WalletManager m) CreatedWallet()
+    internal static (string dir, WalletManager m) CreatedWallet()
     {
         var dir = TempDir(); var m = Mgr(dir);
         m.CreateOrImport(TestData.AbandonMnemonic, Pw);
@@ -207,7 +207,7 @@ public class MvpReportFixTests
         Assert.Equal(0UL, plan.ChangeSompi);
         Assert.True(plan.FoldedChangeSompi > 9_000_000, $"folded={plan.FoldedChangeSompi}");
         Assert.Equal(plan.InputSompi - plan.AmountSompi - plan.FeeSompi + plan.FoldedChangeSompi, plan.FoldedChangeSompi);
-        Assert.Single(plan.Warnings);
+        Assert.Contains(plan.Warnings, w => w.Contains("ADDED TO THE FEE"));
         Assert.Contains(Kas.Format(plan.FoldedChangeSompi), plan.Summary());
         Assert.Contains("ADDED TO THE FEE", plan.Summary());
     }
@@ -220,31 +220,6 @@ public class MvpReportFixTests
         Assert.True(plan.ChangeSompi > 0);
         Assert.Equal(0UL, plan.FoldedChangeSompi);
         Assert.Empty(plan.Warnings);
-    }
-
-    [Fact]
-    public void FeeCap_RejectsFoldedDustFee_WithExplanation()
-    {
-        using var acc = HdAccount.FromMnemonic(TestData.AbandonMnemonic, WalletNetwork.Testnet10);
-        var s = new WalletSettings();
-        var ex = Assert.Throws<TransferException>(() =>
-            TransferService.Build(acc, OneKas(acc.Address), TestData.AbandonTestnet, 90_000_000, maxFeeSompi: s.FeeCapFor(90_000_000)));
-        Assert.Contains("fee cap", ex.Message);
-        Assert.Contains("too small for a change output", ex.Message);
-        // normal send fits under the default cap
-        var ok = TransferService.Build(acc, OneKas(acc.Address), TestData.AbandonTestnet, 50_000_000, maxFeeSompi: s.FeeCapFor(50_000_000));
-        Assert.Equal(1_000_000UL, ok.FeeCapSompi);
-    }
-
-    [Fact]
-    public void FeeCap_IsConfigurable()
-    {
-        var s = new WalletSettings { MaxFeeFloorSompi = 20_000_000, MaxFeePercent = 0 };
-        Assert.Equal(20_000_000UL, s.FeeCapFor(90_000_000));
-        Assert.Equal(5_000_000_000UL, new WalletSettings().FeeCapFor(500_000_000_000)); // 1% of 5000 KAS = 50 KAS
-        using var acc = HdAccount.FromMnemonic(TestData.AbandonMnemonic, WalletNetwork.Testnet10);
-        var plan = TransferService.Build(acc, OneKas(acc.Address), TestData.AbandonTestnet, 90_000_000, maxFeeSompi: s.FeeCapFor(90_000_000));
-        Assert.True(plan.FoldedChangeSompi > 0);
     }
 
     [Fact]
