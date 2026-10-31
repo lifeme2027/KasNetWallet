@@ -165,3 +165,17 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **F3:** `FoldBlockThreshold = MinimumChange − MinimumChange/20`. Folds at or above it, and NKaspa fold-cap refusals, give one block message; this removes the oscillation between BLOCK-nofit / FOLD+WARN / BLOCK-burn. Trade-off: change in [0.95, 1.0) × MinimumChange that used to fold with a warning is now blocked (conservative).
 - **F4:** `WalletManager.EnsureNodeFresh` blocks building when the node is unsynced, the DAA score is 0, below the network's Toccata activation (both networks activated), or lower than the highest score seen this session. Status read failure also blocks (previously fell back to the default policy).
 - **F5:** the wallet keeps rejecting format (Cf) characters, now with an explicit message naming the word and code point; NKaspa strips them. Documented in FOR-TESTERS §11d.
+
+## D22 — Retest 5747f6b fixes (G1, G2/F3, G3, G5; G4 unchanged)
+
+- **G1 old data folder.** `LegacyData` checks `%APPDATA%\KaspaDesktopWallet` at startup (`LegacyDataPrompt`).
+  - If the new folder already exists and the old folder has `wallet.*.json` files the new one lacks, the user is told and offered **Import**. Import copies the wallet, history and unlock-state files and never overwrites anything.
+  - After a migration or import, the user is told that the old folder still holds an **encrypted copy**, and that changing the password leaves that copy on the old password. The user is offered a delete, which needs two Yes clicks; No is the default on both prompts.
+  - `DeleteLegacy` throws unless `userConfirmed`. It also refuses if any old wallet is missing from the new folder.
+- **G2/F3 one fold amount.** Fold = actual fee − expected fee, used for every decision. NKaspa's reported fold is no longer used. Fold, block and normal change now follow the change amount in one order, both before and after Toccata.
+  - A block throws `ChangeBlockedException`. It carries a **verified** lower amount: the suggestion is built for real and gives a normal change output.
+  - The UI offers three choices: use the lower amount; add the remainder to the payment (Send max on exactly those inputs, so there is no change output); or Cancel / Send max.
+- **G3 DAA check.** A node may report a DAA score up to `DaaRegressionTolerance` = 600 (about 1 minute at 10 BPS) below the highest seen before it is blocked. The highest seen resets to 0 on connect or `UseNode` (node change).
+- **G5 read-only files.** Migration and import copy through `CopyWritable`. It clears ReadOnly; on Unix it adds user read/write, so the throttle and history files can still be written.
+- **G4** is not changed (per instruction).
+- Tests: `Retest5747f6bTests` (8 tests). Earlier tests now use `ThrowsAny<TransferException>`, because block is now the subclass `ChangeBlockedException`. The F4 regression test now uses tolerance + 1.

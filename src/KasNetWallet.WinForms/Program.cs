@@ -14,6 +14,7 @@ internal static class Program
         TaskScheduler.UnobservedTaskException += (_, e) => { ErrorReporter.Log("Unobserved task exception", e.Exception); e.SetObserved(); };
         ApplicationConfiguration.Initialize();
         var dir = WalletSettings.DefaultDirectory;
+        LegacyDataPrompt.Run(dir); // G1
         var settingsPath = Path.Combine(dir, "settings.json");
         var settings = WalletSettings.Load(settingsPath, out var notices);
         if (notices.Count > 0)

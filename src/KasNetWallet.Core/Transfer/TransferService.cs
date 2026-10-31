@@ -12,9 +12,21 @@ public enum FeeMode
     NodeEstimate,
 }
 
-public sealed class TransferException : Exception
+public class TransferException : Exception
 {
     public TransferException(string message) : base(message) { }
+}
+
+/// <summary>G2: change too small for its own output and too large to burn. Carries actionable alternatives.</summary>
+public sealed class ChangeBlockedException : TransferException
+{
+    public ChangeBlockedException(string message, ulong? suggestedAmountSompi, IReadOnlyList<OutPoint> inputs, ulong? folded) : base(message)
+    { SuggestedAmountSompi = suggestedAmountSompi; Inputs = inputs; FoldedSompi = folded; }
+    /// <summary>A lower amount that was verified to build with a normal change output, or null if none was found.</summary>
+    public ulong? SuggestedAmountSompi { get; }
+    /// <summary>Inputs of the blocked attempt; "add remainder to payment" spends exactly these with no change.</summary>
+    public IReadOnlyList<OutPoint> Inputs { get; }
+    public ulong? FoldedSompi { get; }
 }
 
 /// <summary>Submission timed out/disconnected: the tx may or may not be accepted. Re-submitting the same signed tx cannot double-spend.</summary>
@@ -39,15 +51,40 @@ public static class TransferService
     /// </summary>
     internal static ulong FoldBlockThreshold(ulong minimumChange) => minimumChange - minimumChange / 20;
 
-    internal static string ChangeBlockedText(ulong? folded) =>
+    internal static string ChangeBlockedText(ulong? folded, ulong? suggested = null, bool singleUtxo = false) =>
         "Blocked: the change" + (folded is ulong f && f > 0 ? $" (about {Kas.Format(f)} KAS)" : "") +
         " is too small to be its own output — a change output that small has high storage mass (KIP-9) and exceeds the transaction mass limit — " +
-        "and too large to burn as fee. Adding another UTXO did not help. Change the amount by about 0.05 KAS, or use Send max.";
+        "and too large to burn as fee. Adding another UTXO did not help. Options: " +
+        (suggested is ulong s ? $"LOWER the amount to {Kas.Format(s)} KAS or less (then the change is a normal output); " : "lower the amount; ") +
+        "or add the remainder to the payment (the recipient gets it instead of miners); or use Send max." +
+        (singleUtxo ? " Tip: this wallet has a single UTXO — sending a part to your own address first splits it, so later payments can add an input." : "");
+
+    /// <summary>G2: finds a lower amount that builds with a normal change output (verified by an actual build).</summary>
+    private static ulong? SuggestLowerAmount(HdAccount account, IReadOnlyList<Coin> coins, string to, ulong amountSompi, ulong minChange,
+        FeeMode mode, double? nodeFeeRate, FeePolicy? feePolicy, MassPolicy? massPolicy)
+    {
+        var step = Math.Max(10_000UL, minChange / 50);
+        for (var k = 1UL; k <= 60; k++)
+        {
+            if (amountSompi <= k * step + MinPaymentSompi) break;
+            var cand = amountSompi - k * step;
+            cand -= cand % 10_000; // round to 0.0001 KAS
+            try
+            {
+                var p = Build(account, coins, to, cand, mode, nodeFeeRate, feePolicy, massPolicy, suggest: false);
+                if (p.FoldedChangeSompi == 0 && p.ChangeSompi > 0) return cand;
+            }
+            catch (TransferException) { }
+        }
+        return null;
+    }
 
     private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange, ulong NkFolded = 0)
     {
         /// <summary>Change folded into the fee: NKaspa's own report (5c49251 FoldedChange), or our fee − expected check (defense in depth).</summary>
-        public ulong Folded => Math.Max(NkFolded, Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0);
+        /// G2: one measure only — actual fee − expected fee. NKaspa's FoldedChange is not used for decisions because its meaning
+        /// varies (sometimes the whole fee, sometimes change + a constant), which made fold/block alternate.
+        public ulong Folded => Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0;
     }
 
     internal sealed record Ctx(HdAccount Account, Network Net, KaspaAddress Payee, KaspaAddress Own, Coin[] Ordered, FeeMode Mode, ulong Rate, ulong ReferenceRate, MassPolicy Mass);
@@ -145,6 +182,10 @@ public static class TransferService
     /// <summary>Offline: builds, signs and self-verifies a single-recipient transfer from the account's coins.</summary>
     public static TransferPlan Build(HdAccount account, IReadOnlyList<Coin> coins, string to, ulong amountSompi,
         FeeMode mode = FeeMode.MinimumRelay, double? nodeFeeRate = null, FeePolicy? feePolicy = null, MassPolicy? massPolicy = null)
+        => Build(account, coins, to, amountSompi, mode, nodeFeeRate, feePolicy, massPolicy, suggest: true);
+
+    private static TransferPlan Build(HdAccount account, IReadOnlyList<Coin> coins, string to, ulong amountSompi,
+        FeeMode mode, double? nodeFeeRate, FeePolicy? feePolicy, MassPolicy? massPolicy, bool suggest)
     {
         var c = Prepare(account, coins, to, mode, nodeFeeRate, massPolicy);
         if (amountSompi < MinPaymentSompi) throw new TransferException($"Amount below minimum {Kas.Format(MinPaymentSompi)} KAS.");
@@ -183,7 +224,12 @@ public static class TransferService
         // F3: one deterministic rule near the MinimumChange boundary. NKaspa's fold-cap refusal (built == null) and any fold
         // at or above FoldBlockThreshold give the same block; only folds clearly below it are folded with a warning.
         if (built is null || built.Folded >= FoldBlockThreshold(built.MinimumChange))
-            throw new TransferException(ChangeBlockedText(built?.Folded));
+        {
+            var minChange = built?.MinimumChange ?? 1_000_000_000_000UL / Math.Max(1UL, c.Mass.EffectiveCap(c.Net)) / 5;
+            var suggested = suggest ? SuggestLowerAmount(account, coins, to, amountSompi, minChange, mode, nodeFeeRate, feePolicy, massPolicy) : null;
+            var inputs = built is not null ? built.Tx.Inputs.Select(i => i.PreviousOutpoint).ToArray() : c.Ordered.Select(x => x.Outpoint).ToArray();
+            throw new ChangeBlockedException(ChangeBlockedText(built?.Folded, suggested, c.Ordered.Length == 1), suggested, inputs, built?.Folded);
+        }
         return Finish(c, built, amountSompi, feePolicy ?? FeePolicy.Default, false, addedInputs, coins.Count);
     }
 

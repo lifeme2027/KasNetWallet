@@ -155,6 +155,7 @@ public sealed class WalletManager : IAsyncDisposable
     {
         if (_node != null) await _node.DisposeAsync();
         _node = null;
+        _highestDaaSeen = 0; // G3: new node, new DAA history
         if (Settings.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled)
             throw new InvalidOperationException("Mainnet is disabled. Enable it explicitly in settings.");
         var node = ResilientWalletNode.ForUrl(Settings.EffectiveWrpcUrl, TimeSpan.FromSeconds(Settings.RpcTimeoutSeconds));
@@ -168,7 +169,7 @@ public sealed class WalletManager : IAsyncDisposable
         return st;
     }
 
-    public void UseNode(IWalletNode node) => _node = node;
+    public void UseNode(IWalletNode node) { _node = node; _highestDaaSeen = 0; }
 
     private IWalletNode Node => _node ?? throw new InvalidOperationException("Not connected to a node.");
     private HdAccount Account => _account ?? throw new InvalidOperationException("Wallet is locked.");
@@ -191,6 +192,12 @@ public sealed class WalletManager : IAsyncDisposable
 
     private ulong _highestDaaSeen;
 
+    /// <summary>G3: a node may lag a little (load balancer, reconnect); only a regression larger than this blocks.</summary>
+    public const ulong DaaRegressionTolerance = 600;
+
+    /// <summary>G3: highest DAA score seen on the current node; reset whenever the node changes.</summary>
+    internal ulong HighestDaaSeen => _highestDaaSeen;
+
     /// <summary>
     /// F4: the DAA score below which a node is certainly stale: both networks activated Toccata long ago
     /// (rusty-kaspa params: mainnet 474,165,565, testnet-10 467,579,632).
@@ -208,7 +215,7 @@ public sealed class WalletManager : IAsyncDisposable
     {
         if (!st.IsSynced)
             throw new TransferException("The node is not synced yet, so fees and mass rules could be wrong. Wait until it is synced, or connect to another node.");
-        if (st.VirtualDaaScore == 0 || st.VirtualDaaScore < StaleDaaFloor(n) || st.VirtualDaaScore < highestSeen)
+        if (st.VirtualDaaScore == 0 || st.VirtualDaaScore < StaleDaaFloor(n) || st.VirtualDaaScore + DaaRegressionTolerance < highestSeen)
             throw new TransferException($"The node's DAA score ({st.VirtualDaaScore}) is out of date" +
                 (highestSeen > st.VirtualDaaScore ? $" (lower than {highestSeen} seen earlier)" : "") +
                 ", so the transaction could be built with the wrong fee rules. Connect to an up-to-date node and try again.");
@@ -228,6 +235,17 @@ public sealed class WalletManager : IAsyncDisposable
         EnsureNodeFresh(st, Settings.Network, _highestDaaSeen);
         _highestDaaSeen = Math.Max(_highestDaaSeen, st.VirtualDaaScore);
         return Settings.MassPolicyFor(Settings.Network).WithDaaScore(st.VirtualDaaScore);
+    }
+
+    /// <summary>G2 "add the remainder to the payment": spends exactly the blocked plan's inputs with no change output,
+    /// so the leftover goes to the recipient instead of being burned as fee.</summary>
+    public async Task<TransferPlan> PrepareAbsorbChangeAsync(string to, ChangeBlockedException blocked, FeeMode mode, CancellationToken ct = default)
+    {
+        var coins = await Node.GetCoinsAsync(Account.Address, ct);
+        var use = coins.Where(c => blocked.Inputs.Contains(c.Outpoint)).ToArray();
+        if (use.Length != blocked.Inputs.Count) throw new TransferException("The coins of the blocked transfer changed; build the transfer again.");
+        double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
+        return TransferService.BuildSendMax(Account, use, to, mode, rate, Settings.FeePolicy, await CurrentMassPolicyAsync(ct));
     }
 
     /// <summary>N2: Send max — amount = spendable balance − fee, no change output.</summary>

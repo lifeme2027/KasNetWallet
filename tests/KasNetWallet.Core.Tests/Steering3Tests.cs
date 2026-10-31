@@ -242,7 +242,7 @@ public class MassPolicyTests
         using var acc = HdAccount.FromMnemonic(TestData.AbandonMnemonic, WalletNetwork.Testnet10);
         var coins = Coins(acc.Address, 150);
         var amount = 140 * Kas.SompiPerKas;
-        Assert.Throws<TransferException>(() =>
+        Assert.ThrowsAny<TransferException>(() =>
             TransferService.Build(acc, coins, TestData.AbandonTestnet, amount, massPolicy: new MassPolicy { ToccataActive = false }));
         var plan = TransferService.Build(acc, coins, TestData.AbandonTestnet, amount, massPolicy: new MassPolicy { ToccataActive = true });
         Assert.True(plan.Mass > 100_000);

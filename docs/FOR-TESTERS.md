@@ -206,3 +206,18 @@ The old `MaxFeeFloorSompi`/`MaxFeePercent` keys are ignored.
 - Nested errors are no longer duplicated ("corrupted or unsupported … Restore it from backup" appears once).
 - The redactor also masks base64url values (`-`/`_`, ≥43 chars, mixed case) and mnemonic word runs separated by wide gaps (up to 48 separator characters: spaces, tabs, newlines, `|`, bullets, numbering).
 
+
+
+## 11e. Retest 5747f6b fixes
+
+1. **G1**
+   - Have both `%APPDATA%\KasNetWallet` and `%APPDATA%\KaspaDesktopWallet`, with a wallet only in the old one. Start the app: you should get "Old wallet folder found", and Import should make the wallet appear.
+   - After a fresh migration you should get the "encrypted copy / OLD password" notice. Deleting needs two Yes clicks; No keeps the folder.
+2. **G2:** tn10, single 10 KAS UTXO, amount = 10 − 0.002036 − 0.0198 KAS.
+   - You should get "Change cannot be sent" with a "LOWER the amount to X KAS" hint.
+   - Yes sends X with normal change.
+   - No sends everything except the fee (no change output).
+   - Cancel leaves the amount for you to edit.
+   - Moving the amount gradually should never alternate between fold and block.
+3. **G3:** switching to another node that is a few hundred DAA behind should not block. Being more than 600 behind the highest DAA seen on the same node blocks.
+4. **G5:** mark files in the old folder read-only, then migrate. Wrong-password attempts (unlock-state) must still save.

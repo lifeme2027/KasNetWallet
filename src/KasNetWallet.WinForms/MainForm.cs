@@ -121,7 +121,20 @@ internal sealed class MainForm : Form
         {
             ulong sompi;
             try { sompi = Kas.ParseKas(_amount.Text); } catch (FormatException ex) { SetStatus(ex.Message); return; }
-            plan = await _mgr.PrepareTransferAsync(_to.Text, sompi, (FeeMode)_fee.SelectedItem!, cts.Token);
+            try { plan = await _mgr.PrepareTransferAsync(_to.Text, sompi, (FeeMode)_fee.SelectedItem!, cts.Token); }
+            catch (ChangeBlockedException cb)
+            {
+                // G2: offer the verified lower amount (Yes) or adding the remainder to the payment (No).
+                var text = cb.Message + "\n\n" +
+                    (cb.SuggestedAmountSompi is ulong s ? $"Yes = send {Kas.Format(s)} KAS instead\n" : "") +
+                    (cb.SuggestedAmountSompi is null ? "OK" : "No") + " = add the remainder to the payment (recipient gets it, no change)\nCancel = edit the amount yourself (or use Send max)";
+                var r = MessageBox.Show(this, text, "Change cannot be sent", cb.SuggestedAmountSompi is null ? MessageBoxButtons.OKCancel : MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button3);
+                if (r == DialogResult.Yes && cb.SuggestedAmountSompi is ulong lower)
+                { _amount.Text = Kas.Format(lower); plan = await _mgr.PrepareTransferAsync(_to.Text, lower, (FeeMode)_fee.SelectedItem!, cts.Token); }
+                else if (r == DialogResult.No || (r == DialogResult.OK && cb.SuggestedAmountSompi is null))
+                    plan = await _mgr.PrepareAbsorbChangeAsync(_to.Text, cb, (FeeMode)_fee.SelectedItem!, cts.Token);
+                else { SetStatus("Send cancelled: change the amount or use Send max."); return; }
+            }
         }
         var answer = MessageBox.Show(this, plan.Summary() + "\n\nBroadcast this transaction? This cannot be undone.",
             max ? "Confirm send max" : "Confirm send", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);

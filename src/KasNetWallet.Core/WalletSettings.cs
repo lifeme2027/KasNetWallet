@@ -67,14 +67,32 @@ public sealed class WalletSettings
         if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
         CopyTree(legacyDir, tmp);
         Directory.Move(tmp, newDir);
+        LastMigratedFrom = legacyDir;
         WalletLog.Warn("Migrated data folder from legacy KaspaDesktopWallet location (legacy copy kept).");
         return true;
+    }
+
+    /// <summary>G1: set when <see cref="MigrateLegacyDirectory"/> copied the legacy folder in this process (UI shows a notice).</summary>
+    public static string? LastMigratedFrom { get; internal set; }
+
+    /// <summary>Legacy folder path (%APPDATA%/KaspaDesktopWallet).</summary>
+    public static string LegacyDirectory => Path.Combine(AppData, LegacyDirectoryName);
+
+    /// <summary>G5: copies a file and makes the copy writable by the owner (read-only source files would otherwise
+    /// make unlock-state/settings unwritable in the new folder).</summary>
+    internal static void CopyWritable(string src, string dst, bool overwrite = false)
+    {
+        File.Copy(src, dst, overwrite);
+        var attr = File.GetAttributes(dst);
+        if ((attr & FileAttributes.ReadOnly) != 0) File.SetAttributes(dst, attr & ~FileAttributes.ReadOnly);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(dst, File.GetUnixFileMode(dst) | UnixFileMode.UserWrite | UnixFileMode.UserRead);
     }
 
     private static void CopyTree(string src, string dst)
     {
         Directory.CreateDirectory(dst);
-        foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)));
+        foreach (var f in Directory.GetFiles(src)) CopyWritable(f, Path.Combine(dst, Path.GetFileName(f)));
         foreach (var d in Directory.GetDirectories(src)) CopyTree(d, Path.Combine(dst, Path.GetFileName(d)));
     }
 

@@ -64,7 +64,7 @@ public class Retest0c7e556Tests
     {
         using var acc = Tn();
         var coins = new[] { TestData.FakeCoin(acc.Address, 10 * Kas1, 1) };
-        var ex = Assert.Throws<TransferException>(() => TransferService.Build(acc, coins, TestData.AbandonTestnet, 10 * Kas1 - 203_600 - 1_980_000));
+        var ex = Assert.ThrowsAny<TransferException>(() => TransferService.Build(acc, coins, TestData.AbandonTestnet, 10 * Kas1 - 203_600 - 1_980_000));
         Assert.Contains("too small to be its own output", ex.Message);
         Assert.DoesNotContain("change output exceeds", ex.Message);
     }
@@ -108,7 +108,7 @@ public class Retest0c7e556Tests
         Assert.Contains("not synced", Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok with { IsSynced = false }, WalletNetwork.Testnet10, 0)).Message);
         Assert.Contains("out of date", Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok with { VirtualDaaScore = 0 }, WalletNetwork.Testnet10, 0)).Message);
         Assert.Contains("out of date", Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok with { VirtualDaaScore = 467_579_631 }, WalletNetwork.Testnet10, 0)).Message);
-        Assert.Contains("seen earlier", Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok, WalletNetwork.Testnet10, 611_072_767)).Message);
+        Assert.Contains("seen earlier", Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok, WalletNetwork.Testnet10, 611_072_766 + WalletManager.DaaRegressionTolerance + 1)).Message);
         Assert.Throws<TransferException>(() => WalletManager.EnsureNodeFresh(ok with { VirtualDaaScore = 474_165_564 }, WalletNetwork.Mainnet, 0));
     }
 
