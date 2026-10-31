@@ -1,6 +1,8 @@
 using KaspaWallet.Core.Keystore;
 using KaspaWallet.Core.Rpc;
 using KaspaWallet.Core.Transfer;
+using KaspaWallet.Core.Tracking;
+using System.Text;
 
 namespace KaspaWallet.Core;
 
@@ -29,7 +31,7 @@ public sealed class WalletManager : IAsyncDisposable
     public void CreateOrImport(string mnemonic, string password)
     {
         if (KeystoreExists) throw new InvalidOperationException("A wallet already exists for this network. Remove/back up the file first.");
-        if (password is null || password.Length < 8) throw new ArgumentException("Password must be at least 8 characters.");
+        password = NormalizePassword(password);
         var file = WalletKeystore.Encrypt(mnemonic, password, Settings.Network, Kdf);
         WalletKeystore.Save(file, KeystorePath);
     }
@@ -37,7 +39,44 @@ public sealed class WalletManager : IAsyncDisposable
     public void Unlock(string password)
     {
         Lock();
-        _account = WalletKeystore.Unlock(WalletKeystore.Load(KeystorePath), password);
+        var wait = _failedUnlocks > 2 ? TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(5, _failedUnlocks - 2))) : TimeSpan.Zero;
+        if (DateTimeOffset.UtcNow < _lastFailure + wait) throw new InvalidOperationException($"Too many attempts; wait {wait.TotalSeconds:0}s.");
+        try { _account = WalletKeystore.Unlock(WalletKeystore.Load(KeystorePath), NormalizePassword(password, checkStrength: false)); _failedUnlocks = 0; }
+        catch (WrongPasswordException) { _failedUnlocks++; _lastFailure = DateTimeOffset.UtcNow; throw; }
+    }
+
+    private int _failedUnlocks;
+    private DateTimeOffset _lastFailure;
+
+    /// <summary>NFKC-normalizes; empty passwords are always forbidden; new passwords need ≥8 chars.</summary>
+    public static string NormalizePassword(string password, bool checkStrength = true)
+    {
+        if (string.IsNullOrEmpty(password)) throw new ArgumentException("Password must not be empty.");
+        var n = password.Normalize(NormalizationForm.FormKC);
+        if (checkStrength && n.Length < 8) throw new ArgumentException("Password must be at least 8 characters.");
+        return n;
+    }
+
+    /// <summary>Re-encrypts the keystore under a new password (fresh salt/nonce). Old password stops working.</summary>
+    public void ChangePassword(string oldPassword, string newPassword)
+    {
+        var file = WalletKeystore.Load(KeystorePath);
+        var phrase = WalletKeystore.Decrypt(file, NormalizePassword(oldPassword, false));
+        var updated = WalletKeystore.Encrypt(phrase, NormalizePassword(newPassword), Settings.Network, Kdf);
+        WalletKeystore.Save(updated, KeystorePath);
+    }
+
+    public string HistoryPath => Path.Combine(Directory, $"history.{Settings.Network.ToString().ToLowerInvariant()}.json");
+    public TxTracker Tracker { get; private set; } = new();
+
+    /// <summary>Re-checks every tracked tx against the current UTXO set + virtual DAA score (reorg aware).</summary>
+    public async Task<IReadOnlyList<TrackedTx>> RecheckHistoryAsync(CancellationToken ct = default)
+    {
+        var st = await Node.GetStatusAsync(ct);
+        var coins = await Node.GetCoinsAsync(Address!, ct);
+        Tracker.Recheck(coins, st.VirtualDaaScore);
+        Tracker.Save(HistoryPath);
+        return Tracker.Items;
     }
 
     public void Lock()
@@ -50,8 +89,15 @@ public sealed class WalletManager : IAsyncDisposable
     {
         if (_node != null) await _node.DisposeAsync();
         _node = null;
-        var node = await WrpcWalletNode.ConnectAsync(Settings.EffectiveWrpcUrl, ct);
-        var st = await node.GetStatusAsync(ct);
+        if (Settings.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled)
+            throw new InvalidOperationException("Mainnet is disabled. Enable it explicitly in settings.");
+        var node = ResilientWalletNode.ForUrl(Settings.EffectiveWrpcUrl, TimeSpan.FromSeconds(Settings.RpcTimeoutSeconds));
+        NodeStatus st;
+        try { st = await node.GetStatusAsync(ct); }
+        catch { await node.DisposeAsync(); throw; }
+        if (!string.Equals(st.NetworkId, Settings.Network.ExpectedNodeNetworkId(), StringComparison.OrdinalIgnoreCase))
+        { await node.DisposeAsync(); throw new InvalidOperationException($"Node network '{st.NetworkId}' does not match '{Settings.Network.ExpectedNodeNetworkId()}'."); }
+        Tracker.Load(HistoryPath);
         _node = node;
         return st;
     }
@@ -74,11 +120,19 @@ public sealed class WalletManager : IAsyncDisposable
     {
         var coins = await Node.GetCoinsAsync(Account.Address, ct);
         double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
-        return TransferService.Build(Account, coins, to, amountSompi, mode, rate);
+        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, null, Settings.MassPolicyFor(Settings.Network));
     }
 
-    public Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default) =>
-        TransferService.BroadcastAsync(Node, plan, userConfirmed, ct);
+    public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default)
+    {
+        if (plan.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled) throw new TransferException("Mainnet is disabled.");
+        var st = await Node.GetStatusAsync(ct);
+        var id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct);
+        Tracker.Add(id, plan.To, plan.AmountSompi, plan.FeeSompi, plan.Transaction.Inputs.Select(i => i.PreviousOutpoint), plan.ChangeSompi > 0, st.VirtualDaaScore);
+        try { Tracker.Save(HistoryPath); } catch (IOException ex) { WalletLog.Error("Could not save history", ex); }
+        WalletLog.Info($"Broadcast tx {id}");
+        return id;
+    }
 
     public async ValueTask DisposeAsync()
     {

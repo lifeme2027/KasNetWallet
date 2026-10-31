@@ -1,0 +1,10 @@
+Kaspa Desktop Wallet (MVP)
+
+Third-party components:
+- NKaspa (https://github.com/lifeme2027/NKaspa), commit f41c86a6d36da37243bcdd41e76662ac6c25b349, MIT License,
+  referenced as a project reference (not modified, not vendored). Its LICENSE must ship with any binary.
+- Konscious.Security.Cryptography.Argon2 1.3.1, MIT License (NuGet).
+- plenteum/plenteum-wallet-winforms (https://github.com/plenteum/plenteum-wallet-winforms), no license file.
+  Used as a layout/flow reference. Policy: files copied or derived from it must carry the header
+  "Derived from plenteum/plenteum-wallet-winforms" and be listed in docs/DECISIONS.md (D1).
+  Current state: no files are copied or derived; all UI code is original.

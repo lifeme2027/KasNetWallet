@@ -2,16 +2,25 @@
 
 Status legend: **OPEN** = needs owner confirmation; **DONE** = decided for the MVP, revisit if needed.
 
-## D1 — UI base: plenteum-wallet-winforms license — OPEN
-- https://github.com/plenteum/plenteum-wallet-winforms (commit 79881068, archived) has **no LICENSE file**; GitHub reports no license. Its README says it was forked from turtlecoin/turtle-wallet-winforms, which is no longer reachable on GitHub (404), so the upstream license could not be checked.
-- Without a license, default copyright applies, so **no code, `.Designer.cs`, `.resx`, icons or images were copied.** The repo was used only as a reference for screen flow (splash/select → create/import/password → main wallet view with balance, copy address, send, status bar) and the dark visual style. All UI code in `src/KaspaWallet.WinForms` was written from scratch.
-- Pending: (a) ask the plenteum authors to add a license (e.g. MIT/GPL), after which real migration could be considered; or (b) keep the clean-room rewrite (current state).
+## D1 — UI base: plenteum-wallet-winforms license — RESOLVED
+- https://github.com/plenteum/plenteum-wallet-winforms (commit 79881068, archived) has **no LICENSE file**. Its upstream, turtlecoin/turtle-wallet-winforms, returns 404.
+- History: the first policy was a clean-room rewrite with no copying. On 2026-10-31 the user allowed copying, with attribution required.
+- **jun 2026-10-31 decision: no author permission needed** (resolved 16:22 UTC+8).
+- Rules that still apply to any copied/derived file:
+  - it carries the header `Derived from plenteum/plenteum-wallet-winforms`
+  - it is listed in NOTICE and below
+  - all Plenteum/TurtleCoin logic and branding is stripped
+- **Copied/derived files: none so far.** All of `src/KaspaWallet.WinForms` is original code. The repo was used as a layout/flow reference only.
+
+### License pending: needs author permission or rewrite before any public release
+(Superseded by the user decision above. Kept as the required list of copied/derived files.)
+- (none)
 
 ## D2 — BIP39 checksum enforcement — DONE (wrapper) / upstream request
 NKaspa's `Mnemonic(string)` constructor accepts a phrase with a bad checksum and only sets `IsValidChecksum`. Core's `MnemonicService.Normalize` rejects it. Upstream request + patch: docs/NKASPA-REQUESTS.md, docs/patches/0001-*.diff.
 
 ## D3 — Default wRPC endpoints — OPEN
-- Mainnet default: `wss://eva.kaspa.green/kaspa/mainnet/wrpc/json` (the NKaspa sample's default public node). Testnet-10 default: `ws://127.0.0.1:17210` (local kaspad, `--rpclisten-json`). Both can be changed in the start screen and are saved in `settings.json`.
+- Mainnet default: `wss://eva.kaspa.green/kaspa/mainnet/wrpc/json` (the NKaspa sample's default public node). Testnet-10 default: `ws://127.0.0.1:18210` (local kaspad `--testnet --netsuffix=10 --rpclisten-json=default`; rusty-kaspa default JSON wRPC port for testnet is 18210, while 17210 is Borsh. The tester plan binds JSON explicitly to :17210, which works if entered as a custom URL). Both can be changed in the start screen and are saved in `settings.json`.
 - Need to decide: ship a public endpoint list / resolver, or require users to run their own node. The wallet checks the node's `networkId` and `isSynced` before broadcasting.
 
 ## D4 — Fee policy — OPEN
@@ -26,10 +35,54 @@ NKaspa's `Mnemonic(string)` constructor accepts a phrase with a bad checksum and
 AES-256-GCM. The key comes from Argon2id (Konscious 1.3.1), defaults m=64 MiB, t=3, p=4, with a random 16-byte salt and a 12-byte nonce. The AAD binds version, network, address and the KDF params, and loading enforces minimums on the KDF params. The encrypted payload is the normalized mnemonic, not an xprv, so the account can be re-derived. There is one file per network: `%APPDATA%/KaspaDesktopWallet/wallet.<network>.json`.
 
 ## D7 — Address scope — DONE (MVP)
-Only receive index 0 (`m/44'/111111'/0'/0/0`); change goes back to the same address. Multiple addresses, change chain, and address discovery are deferred.
+Only receive index 0 (`m/44'/111111'/0'/0/0`); change goes back to the same address (no /1/i change chain yet — TBD, see D14). Multiple addresses, change chain, and address discovery are deferred.
 
 ## D8 — Testnet-10 mapping — DONE
 `WalletNetwork.Testnet10` maps to NKaspa `Network.Testnet` (prefix `kaspatest`, `ktrv/ktub`). Expected node networkId is `testnet-10`.
 
 ## D9 — NKaspa reference mode — DONE
 Core uses a `ProjectReference` to a local read-only clone (default `../kdw-src/NKaspa`, override with `-p:NKaspaRoot=...`). It was verified at NKaspa commit `f41c86a6d36da37243bcdd41e76662ac6c25b349`. The NKaspa source is never modified here.
+
+## D10 — Default network & mainnet gate — DONE
+Default is **testnet-10**. Mainnet needs two things: selecting it plus confirming an "Enable mainnet" risk dialog, which sets `MainnetEnabled=true` in settings.json. Core refuses to connect or broadcast on mainnet without that flag. Every mainnet send then shows a **second** red dialog that requires typing `SEND MAINNET`.
+
+## D11 — Mass limit / Toccata — OPEN (configurable)
+`settings.json → MassPolicies[network] = { ToccataActive, MaxTransactionMass }`. With `ToccataActive=false` the cap is NKaspa's pre-Toccata 100000; with `true` it is the network's post-Toccata compute limit (500000). The default is **false (conservative) for every network**.
+TBD: confirm the Toccata activation status on tn10, tn11, and mainnet, then change the defaults.
+
+## D12 — Tx history & confirmations — DONE (MVP) / indexer TBD
+NKaspa has no history or subscription API. Outgoing txs are recorded locally in `history.<network>.json`. The tracker re-checks them against the UTXO set and virtual DAA score:
+- Pending → Accepted (change output seen; confirmations = virtualDaa − blockDaaScore)
+- Accepted → Confirmed (≥ `ConfirmationDepthDaa`, default 100)
+- → Reorged (a spent input reappears)
+- → Dropped (inputs still unspent 600 DAA after submit)
+
+Incoming txs are only visible as UTXOs/balance. TBD: an indexer (e.g. the api.kaspa.org REST for tn10) for full history. Also TBD: confirmation depth, and tracking of no-change txs (inferred from inputs disappearing).
+
+## D13 — Node resilience — DONE
+`ResilientWalletNode`:
+- per-call timeout (`RpcTimeoutSeconds`, default 15)
+- reconnect with exponential backoff (1, 2, 4… s, capped at 30 s, 4 attempts)
+- **submit is never auto-retried**, to avoid duplicate broadcasts
+- only `ws://`/`wss://` URLs; gRPC ports 16110/16210 are rejected
+- node networkId mismatch → refuse to connect
+
+## D14 — Open product questions (TBD)
+- Multiple accounts, the /1/i change chain, new receive address per tx, and gap limit: TBD (MVP = single address /0/0).
+- BIP39 passphrase: TBD (not exposed in the UI; Core uses an empty passphrase).
+- Mnemonic word counts: generation offers 12/24; import accepts 12/15/18/21/24.
+- Re-displaying/exporting the mnemonic after creation: TBD (not implemented).
+- Sending to P2SH/ECDSA addresses: TBD. The builder may accept them, but this is untested. PSKT is not supported.
+- QR code: not implemented, TBD.
+- UI language: English only; zh-CN TBD.
+- Installer, code signing, and self-contained build: TBD (currently a framework-dependent zip).
+- Max/sweep send, fee priority buckets (low/high), and custom fee: TBD.
+- Wallet file ACL hardening (beyond the %APPDATA% user profile): TBD.
+
+## D15 — Logging — DONE
+The log goes to the local file `%LOCALAPPDATA%/KaspaDesktopWallet/logs/wallet-YYYYMMDD.log`. Every line passes through `SecretRedactor`, which masks:
+- xprv/kprv/ktrv/tprv strings
+- hex runs of ≥64 characters (this includes tx ids)
+- runs of ≥12 BIP39 words
+
+Exceptions are logged only as type + message, never `ToString()`. There is no telemetry, no crash upload, and no auto-update.

@@ -36,6 +36,12 @@ docs/DECISIONS.md, docs/NKASPA-REQUESTS.md, docs/patches/
 - **Networks:** mainnet and testnet-10, selected on the start screen together with the wRPC URL. There is one keystore per network.
 - Mnemonics and private keys are never logged or written to disk in plaintext.
 
+## Safety defaults
+- The default network is **testnet-10**. Mainnet requires an explicit opt-in, and every mainnet send shows a separate warning that requires typing a phrase.
+- Imports with a bad checksum, an unknown word, or a wrong word count are rejected.
+- Secrets are wrapped in types that print `[REDACTED]` and refuse JSON serialization, and log lines are redacted.
+- The tester guide is docs/FOR-TESTERS.md.
+
 ## Build & run
 Prerequisites: .NET 8 SDK, and a clone of NKaspa next to this repo (or set `NKaspaRoot`):
 ```

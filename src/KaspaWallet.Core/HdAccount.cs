@@ -6,8 +6,15 @@ namespace KaspaWallet.Core;
 /// Derived key material for the single MVP receive address m/44'/111111'/0'/0/0.
 /// Holds a private <see cref="Key"/>; dispose (lock) to zero it.
 /// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(RefuseSecretJsonConverter<HdAccount>))]
 public sealed class HdAccount : IDisposable
 {
+    /// <summary>Never exposes key material.</summary>
+    public override string ToString() => $"HdAccount({Network}, {Address}) {SecretRedactor.Mask}";
+
+    public static HdAccount FromMnemonic(SecretText mnemonic, WalletNetwork network, SecretText? bip39Passphrase = null) =>
+        FromMnemonic(mnemonic.Reveal(), network, bip39Passphrase?.Reveal());
+
     public const string ReceivePath = "m/44'/111111'/0'/0/0";
 
     private Key? _key;

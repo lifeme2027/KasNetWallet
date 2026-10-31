@@ -25,7 +25,7 @@ public static class TransferService
 
     /// <summary>Offline: builds, signs and self-verifies a single-recipient transfer from the account's coins.</summary>
     public static TransferPlan Build(HdAccount account, IReadOnlyList<Coin> coins, string to, ulong amountSompi,
-        FeeMode mode = FeeMode.MinimumRelay, double? nodeFeeRate = null, ulong? maxFeeSompi = null)
+        FeeMode mode = FeeMode.MinimumRelay, double? nodeFeeRate = null, ulong? maxFeeSompi = null, MassPolicy? massPolicy = null)
     {
         var net = account.Network.ToNKaspa();
         if (!KaspaAddress.TryParse(to?.Trim(), net, out var payee) || payee is null)
@@ -42,7 +42,8 @@ public static class TransferService
         foreach (var c in ordered) total = checked(total + c.Amount.Sompi);
         if (amountSompi >= total) throw new TransferException("Insufficient funds (amount + fee exceeds balance).");
 
-        var builder = new TransactionBuilder(net).AddKeys(account.Key).AddCoins(ordered).Send(payee, Money.FromSompi(amountSompi)).SetChange(own);
+        massPolicy ??= MassPolicy.DefaultFor(account.Network);
+        var builder = massPolicy.CreateBuilder(net).AddKeys(account.Key).AddCoins(ordered).Send(payee, Money.FromSompi(amountSompi)).SetChange(own);
         if (mode == FeeMode.NodeEstimate && nodeFeeRate is double r)
             builder.SendEstimatedFees(new FeeRate(Math.Max(FeeRate.MinimumRelaySompiPerGram, (ulong)Math.Ceiling(r))));
         else
@@ -76,6 +77,8 @@ public static class TransferService
         var fee = inSum - outSum;
         if (maxFeeSompi is ulong cap && fee > cap) throw new TransferException($"Fee {Kas.Format(fee)} KAS exceeds limit {Kas.Format(cap)} KAS.");
         var mass = MassCalculator.Calculate(tx, entries);
+        if (MassCalculator.RelayMass(mass) > massPolicy.EffectiveCap(net))
+            throw new TransferException($"Transaction mass {MassCalculator.RelayMass(mass)} exceeds configured cap {massPolicy.EffectiveCap(net)}; consolidate UTXOs or send less.");
         return new TransferPlan(tx, account.Network, account.Address, payee.ToString(), amountSompi, fee, change, inSum, tx.Inputs.Count, MassCalculator.RelayMass(mass));
     }
 

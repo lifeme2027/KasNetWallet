@@ -31,7 +31,7 @@ public static class WalletNetworkExtensions
     {
         // Public community endpoints; users should prefer their own node. See docs/DECISIONS.md (D3).
         WalletNetwork.Mainnet => "wss://eva.kaspa.green/kaspa/mainnet/wrpc/json",
-        WalletNetwork.Testnet10 => "ws://127.0.0.1:17210",
+        WalletNetwork.Testnet10 => "ws://127.0.0.1:18210",
         _ => throw new ArgumentOutOfRangeException(nameof(n)),
     };
 }

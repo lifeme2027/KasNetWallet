@@ -2,5 +2,17 @@
   <PropertyGroup>
     <!-- Local clone of https://github.com/lifeme2027/NKaspa (read-only; do not modify). Override with -p:NKaspaRoot=... -->
     <NKaspaRoot Condition="'$(NKaspaRoot)' == ''">$(MSBuildThisFileDirectory)..\kdw-src\NKaspa</NKaspaRoot>
+    <!-- Pinned NKaspa commit (0.1.9-alpha). Build fails if the clone is at another commit or has local changes. -->
+    <NKaspaPinnedCommit>f41c86a6d36da37243bcdd41e76662ac6c25b349</NKaspaPinnedCommit>
   </PropertyGroup>
+  <Target Name="VerifyNKaspaPin" BeforeTargets="ResolveProjectReferences" Condition="'$(MSBuildProjectName)' == 'KaspaWallet.Core' And '$(SkipNKaspaPinCheck)' != 'true'">
+    <Exec Command="git -C &quot;$(NKaspaRoot)&quot; rev-parse HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_NKaspaHead" />
+    </Exec>
+    <Exec Command="git -C &quot;$(NKaspaRoot)&quot; status --porcelain --untracked-files=no" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_NKaspaDirty" />
+    </Exec>
+    <Error Condition="'$(_NKaspaHead)' != '$(NKaspaPinnedCommit)'" Text="NKaspa at $(NKaspaRoot) is $(_NKaspaHead), expected pinned $(NKaspaPinnedCommit). Check out the pinned commit or pass -p:SkipNKaspaPinCheck=true." />
+    <Error Condition="'$(_NKaspaDirty)' != ''" Text="NKaspa clone has local modifications; it must be unmodified." />
+  </Target>
 </Project>
