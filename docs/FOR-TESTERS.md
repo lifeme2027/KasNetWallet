@@ -4,11 +4,24 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Form:** portable zip with no installer, `KaspaDesktopWallet-0.1.0-win-x64.zip`. Built on the Linux box at `` with `dotnet publish src/KaspaWallet.WinForms -c Release -r win-x64 --self-contained false`. It contains NOTICE and NKaspa-LICENSE.txt.
+- **Current build (MVP-1 report fixes):** `KaspaDesktopWallet-0.1.0-d8e460c-win-x64.zip`
+  - Built from **commit `d8e460c443a46851766d657a615bab45e439b8c9`** in a fresh `git clone` with an empty `git status` (KDW-01).
+  - NKaspa: `f41c86a6d36da37243bcdd41e76662ac6c25b349`.
+  - SDK: 8.0.427.
+  - Build time: 2026-10-31 16:40:51 UTC+8.
+  - **SHA256:** `f09c8ac74820c2d0edaf9b79af3dae21545f1109edc6826d9ca2172b9b5212f2`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-d8e460c-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep d8e460c` (InformationalVersion).
+- **Superseded:** the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
+- **Form:** portable zip with no installer. Contents:
+  - the publish output of `dotnet publish src/KaspaWallet.WinForms -c Release -r win-x64 --self-contained false`
+  - NOTICE
+  - NKaspa-LICENSE.txt
 - **Runtime:** framework-dependent, so it needs the **.NET 8 Desktop Runtime x64** installed. No admin rights are needed. A self-contained build is TBD.
-- **SHA256:** listed in `SHA256SUMS`. The value for the build from this commit's code is
-  `93158c3a6bde318cde786d617ca00bd99dd7452841c56a01d09e21108368a629  KaspaDesktopWallet-0.1.0-win-x64.zip`.
-  The zip entries use fixed timestamps. The publish output itself is not guaranteed bit-reproducible, so verify against SHA256SUMS.
+- **Build settings:**
+  - `EnableUnsafeBinaryFormatterSerialization=false` (KDW-03).
+  - PDB paths are mapped to `/_/` via PathMap (KDW-02). NKaspa's own PDB still contains its clone path.
+- **Reproducibility:** the zip entries use fixed timestamps. The publish output itself is not guaranteed bit-reproducible, so verify against SHA256SUMS and BUILD-INFO.
 - **Code signing:** none (unsigned), so expect a SmartScreen warning. Signing is TBD.
 - **Entry point:** `KaspaWallet.WinForms.exe`. DPI mode is PerMonitorV2.
 
@@ -19,8 +32,10 @@ Times are Asia/Shanghai (UTC+8).
 
 ## 3. Network and node
 - **Default network:** **testnet-10**. testnet-11 is not wired (TBD).
-- **Default endpoint:** `ws://127.0.0.1:18210`. This is the JSON wRPC default for testnet when running `kaspad --testnet --netsuffix=10 --rpclisten-json=default --utxoindex`.
-  - The test plan's `--rpclisten-json=0.0.0.0:17210` also works; type `ws://<host>:17210` in the start screen.
+- **Default endpoint:** `ws://127.0.0.1:18210`. **Confirmed:** the tn10 JSON wRPC port is 18210 (17210 is Borsh, 16210 is gRPC; source: rusty-kaspa `network.rs default_json_rpc_port`).
+  - **kaspad must be started with `--rpclisten-json`.** Without it, nothing listens on 18210. Example: `kaspad --testnet --netsuffix=10 --rpclisten-json=default --utxoindex`.
+  - The wallet speaks JSON only. A Borsh port (17210) does not work.
+  - Public nodes: the `/wrpc/json` path on the same host also works, e.g. `wss://<host>/kaspa/testnet-10/wrpc/json`.
 - **Custom node:** yes. Use the URL box on the start screen; it is saved to settings.json.
   - Only `ws://` and `wss://` (JSON wRPC) are accepted.
   - gRPC ports 16110/16210/16310 and non-ws schemes are rejected with a message (KW-062).
@@ -45,6 +60,16 @@ Times are Asia/Shanghai (UTC+8).
 - **KDF:** **Argon2id** (Konscious 1.3.1), m=64 MiB, t=3, p=4, 16-byte salt. KDF parameters below the minimum are rejected when loading.
 - **Password:** **empty passwords are forbidden**, and new passwords need at least 8 characters. Passwords are NFKC-normalized (KW-070).
   - After 3 failed unlocks, a growing delay applies (2 s, 4 s … 30 s).
+  - The failure count is **saved in `unlock-state.<network>.json`, so it survives restarts** (KDW-09).
+- **Error handling (KDW-05):** none of these crash the app or show a stack trace; each gives a friendly message:
+  - an empty password in the unlock box
+  - a 4th attempt during the delay (shows "please wait N s")
+  - a corrupted, truncated, or tampered wallet file (bad JSON, bad base64, unknown network, KDF out of range)
+  - a corrupt settings.json (falls back to testnet-10 with mainnet disabled)
+  - With a corrupt wallet file, the start screen shows "Wallet file problem: …" instead of crashing at launch.
+  - Global exception handlers (ThreadException, UnhandledException, UnobservedTaskException) log only the redacted message.
+- **KDF limits (KDW-08):** the file must have m ≤ 1 GiB, t ≤ 10, p ≤ 16, and the file must be ≤ 64 KiB. Anything above is rejected *before* Argon2 runs.
+- **File permissions (KDW-06):** wallet and unlock-state files are created 0600 on Linux/macOS. On Windows they inherit the %APPDATA% ACL (WU-K05 still needs a real test).
   - Changing the password (`WalletManager.ChangePassword`) re-encrypts the file with a new salt and nonce. Core only; **there is no UI button yet (TBD)**.
 - **Writes:** atomic (temp file, then rename). An existing wallet is never overwritten.
 - **ACL:** inherits the user profile's permissions. Explicit ACL hardening is TBD.
@@ -72,6 +97,8 @@ Times are Asia/Shanghai (UTC+8).
 
 ## 7. Mnemonic and accounts
 - **Generation:** 24 words (Core also supports 12).
+- **Backup verification (KDW-04):** after the phrase window closes, you must enter the words at **3 random positions**. The wallet file is not written until this check passes; a wrong answer clears the boxes so you can try again or go back and view the phrase.
+- **Log redaction (KDW-10):** these phrase formats are also masked from 8 words: comma-separated, `1.word` / `1. word` numbering, hyphen-joined, and JSON arrays. Mixed-case base64 strings of 43 or more characters (32-byte keys) are masked too.
 - **Import:** 12/15/18/21/24 words.
 - **Hard reject** with a clear error and no wallet file created:
   - bad checksum, e.g. one word changed
@@ -111,6 +138,12 @@ Times are Asia/Shanghai (UTC+8).
   - The default is false (conservative). The Toccata activation status on testnet/mainnet is **TBD**.
   - Over the cap, the send is rejected with "consolidate UTXOs or send less".
 - **Fees:** MinimumRelay (100 sompi/gram, the NKaspa floor) or NodeEstimate (normal bucket).
+- **Fee cap (KDW-11):** cap = max(`MaxFeeFloorSompi`, amount × `MaxFeePercent`%). The default is max(0.01 KAS, 1%). Both values can be changed in settings.json, and a fee above the cap is **rejected** with the reason.
+- **Change folded into the fee (KDW-11):** change below NKaspa's minimum change (about 0.1 KAS pre-Toccata) cannot become a change output.
+  - The confirm dialog shows `WARNING: change of X KAS … ADDED TO THE FEE`.
+  - A **second** confirmation is required.
+  - Under the default cap this usually exceeds the limit and is rejected. Adjust the amount or raise the cap.
+- **Submit timeout:** shows "Submission status unknown … refresh". The tx is recorded in history as Pending. Re-submitting the same signed tx cannot double-spend.
   - Low/high priority, a custom fee, and Max/sweep are TBD.
 
 ## 12. UI languages
