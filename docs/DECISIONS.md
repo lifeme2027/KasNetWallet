@@ -188,3 +188,17 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
   - **S7.** `DeleteLegacy` and `Import` refuse when the old and new paths resolve to the same folder.
 - **Docs.** Claims about a third-party wallet UI origin were removed from NOTICE, README, Theme.cs and D1. No such file was ever copied, and that project is not a dependency. NOTICE now has the correct NKaspa pin, 5c49251.
 - Tests: `RetestDa66c4dTests` (17 tests, counting theory cases).
+
+## D24 — Retest 570d403 fixes (N1, N3, N2, settings merge, mainnet notice, known issues)
+
+- **N1: deleting the old folder is selective, never recursive.** `LegacyData.PlanDelete` decides per top-level file:
+  - deleted: `wallet.*.json` and `history.*.json` with a byte-identical (SHA-256) copy anywhere in the new folder; `unlock-state.*.json`, `settings.json` (already merged) and `legacy-reminder.json`;
+  - kept: every sub-folder (e.g. `backup/`), `*.bak`, logs, unknown files, and a history file whose new copy has since diverged.
+  - The kept items are listed in the delete offer, the confirmation and the result message. The old folder itself is removed only when it ends up empty (non-recursive delete).
+  - The existing guard stays: nothing is deleted unless every old wallet has an identical copy in the new folder.
+- **N3.** A wallet imported under a new name (`wallet.<net>.legacy-<sha8>.json`) brings its history as `history.<net>.legacy-<sha8>.json`, so renaming both files back makes the app use them together. The hint now says to rename the history file too. Unlock-state is not copied for a renamed wallet (it starts fresh).
+- **N2: fixed.** Pre-Toccata (MinimumChange 10,000,000), the fold/block boundary is now the remainder (inputs − amount) ≥ 9,500,000, which does not depend on the fee rate. Before, it was the folded amount (remainder − fee), and NKaspa's fee-dependent fold-cap refusals fell between folds, so at rate ≥500 the order was FOLD → BLOCK → FOLD → BLOCK. The suggestion search adds 60 coarse (5×) steps after the 60 fine ones, so blocks whose minimum change came from the fallback estimate also get a suggestion. Post-Toccata is unchanged.
+- **Settings merge: only absent keys.** A key present in the new `settings.json` was saved by this version and counts as user-set, even if it equals the default. Only keys missing from the new file are taken from the old one; if the new file is missing, the old one is copied. Consequence: the app saves the whole settings file when a wallet is opened, so after that first save there is nothing left to merge.
+- **Mainnet notice.** If the old settings use mainnet and the new settings have no `Network` key, the import prompt says the app will start on MAINNET.
+- **Known issue (not fixed): node estimate does not charge storage mass.** NodeEstimate charges relay mass × node rate (D23). Storage mass is only checked against the mass limit, not paid for. If a node starts requiring fees for storage mass, transactions with small outputs may be rejected.
+- Tests: `Retest570d403Tests` (17 tests, counting theory cases). `Import_MergesSettings_KeepsUserChangedNewValues` was updated to the absent-key rule.

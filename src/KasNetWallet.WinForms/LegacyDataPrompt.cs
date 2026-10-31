@@ -20,11 +20,11 @@ internal static class LegacyDataPrompt
             }
             if (!st.ShouldOfferDelete) return;
             if (MessageBox.Show(LegacyData.NoticeText(st), "Old wallet copy", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes
-                || MessageBox.Show($"Permanently delete\n{st.LegacyDir}\n(including the encrypted wallet copy)? This cannot be undone.",
+                || MessageBox.Show($"Permanently delete the verified wallet files in\n{st.LegacyDir}\n(including the encrypted wallet copy)? This cannot be undone." + LegacyData.KeptText(LegacyData.PlanDelete(st).Keep),
                     "Confirm delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             { LegacyData.RecordDeclined(st); return; }
-            LegacyData.DeleteLegacy(st, userConfirmed: true);
-            MessageBox.Show("The old folder was deleted.", "Old wallet copy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var done = LegacyData.DeleteLegacy(st, userConfirmed: true);
+            MessageBox.Show(done.Keep.Count == 0 ? "The old folder was deleted." : $"Deleted {done.Delete.Count} verified file(s)." + LegacyData.KeptText(done.Keep), "Old wallet copy", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {

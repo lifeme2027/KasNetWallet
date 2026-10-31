@@ -16,7 +16,7 @@ public static class LegacyData
     public const int MaxDeleteOffers = 2;
 
     public sealed record Status(string LegacyDir, string NewDir, bool MigratedThisRun, IReadOnlyList<string> LegacyWallets,
-        IReadOnlyList<string> ImportableWallets, IReadOnlyList<string> Conflicts, int DeclinedDeletes)
+        IReadOnlyList<string> ImportableWallets, IReadOnlyList<string> Conflicts, int DeclinedDeletes, bool SwitchesToMainnet = false)
     {
         public bool LegacyHasWallets => LegacyWallets.Count > 0;
         /// <summary>Old wallets with no byte-identical copy in the new folder (they are invisible to the user).</summary>
@@ -43,8 +43,28 @@ public static class LegacyData
         var have = NewHashes(newDir);
         var importable = legacy.Where(f => !have.Contains(Hash(Path.Combine(legacyDir, f)))).ToArray();
         var conflicts = importable.Where(f => File.Exists(Path.Combine(newDir, f))).ToArray();
-        return new Status(legacyDir, newDir, migratedThisRun, legacy, importable, conflicts, ReadDeclines(newDir));
+        return new Status(legacyDir, newDir, migratedThisRun, legacy, importable, conflicts, ReadDeclines(newDir), WouldSwitchToMainnet(legacyDir, newDir));
     }
+
+    private static JsonObject? ReadJson(string path)
+    {
+        try { return File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path)) as JsonObject : null; }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>Round 4: importing the old settings would make the app start on mainnet (old Network = mainnet, new settings has no Network key).</summary>
+    internal static bool WouldSwitchToMainnet(string legacyDir, string newDir)
+    {
+        var oldNet = ReadJson(Path.Combine(legacyDir, "settings.json"))?["Network"];
+        if (oldNet is null) return false;
+        var text = oldNet.GetValueKind() == JsonValueKind.Number ? (oldNet.GetValue<int>() == (int)WalletNetwork.Mainnet ? "mainnet" : "") : oldNet.ToString();
+        if (!text.Equals("mainnet", StringComparison.OrdinalIgnoreCase)) return false;
+        var newJ = ReadJson(Path.Combine(newDir, "settings.json"));
+        return newJ is null || !newJ.ContainsKey("Network");
+    }
+
+    /// <summary>The network token of a wallet file name: wallet.&lt;token&gt;.json (e.g. testnet10, testnet10.legacy-1a2b3c4d).</summary>
+    internal static string NetToken(string walletFile) => walletFile["wallet.".Length..^".json".Length];
 
     /// <summary>Name the old wallet gets in the new folder: same name if free, else wallet.&lt;net&gt;.legacy-&lt;hash8&gt;.json.</summary>
     public static string ImportName(Status st, string legacyFile)
@@ -66,14 +86,13 @@ public static class LegacyData
             var target = ImportName(st, w);
             if (File.Exists(Path.Combine(st.NewDir, target))) throw new IOException($"Refusing to overwrite {target}.");
             WalletSettings.CopyWritable(Path.Combine(st.LegacyDir, w), Path.Combine(st.NewDir, target));
-            if (target == w)
+            var net = NetToken(w); var newNet = NetToken(target);
+            // N3: history follows the wallet under its new name; unlock-state only when the name is kept (a fresh counter is safer).
+            var companions = target == w ? new[] { "history", "unlock-state" } : new[] { "history" };
+            foreach (var kind in companions)
             {
-                var net = w["wallet.".Length..^".json".Length];
-                foreach (var f in new[] { $"history.{net}.json", $"unlock-state.{net}.json" })
-                {
-                    var src = Path.Combine(st.LegacyDir, f); var dst = Path.Combine(st.NewDir, f);
-                    if (File.Exists(src) && !File.Exists(dst)) WalletSettings.CopyWritable(src, dst);
-                }
+                var src = Path.Combine(st.LegacyDir, $"{kind}.{net}.json"); var dst = Path.Combine(st.NewDir, $"{kind}.{newNet}.json");
+                if (File.Exists(src) && !File.Exists(dst)) WalletSettings.CopyWritable(src, dst);
             }
             done[w] = target;
         }
@@ -82,24 +101,18 @@ public static class LegacyData
         return done;
     }
 
-    /// <summary>Old settings.json: copied when the new one is missing; otherwise each old value is taken where the new value is still the default.</summary>
+    /// <summary>Old settings.json: copied when the new one is missing; otherwise only keys ABSENT from the new file are taken.
+    /// A key present in the new file was saved by this version, i.e. set by the user, even if it equals the default (round 4).</summary>
     internal static void MergeSettings(string legacyDir, string newDir)
     {
         var oldPath = Path.Combine(legacyDir, "settings.json"); var newPath = Path.Combine(newDir, "settings.json");
         if (!File.Exists(oldPath)) return;
         if (!File.Exists(newPath)) { WalletSettings.CopyWritable(oldPath, newPath); return; }
-        JsonObject? oldJ, newJ;
-        try { oldJ = JsonNode.Parse(File.ReadAllText(oldPath)) as JsonObject; newJ = JsonNode.Parse(File.ReadAllText(newPath)) as JsonObject; }
-        catch (JsonException) { return; }
+        var oldJ = ReadJson(oldPath); var newJ = ReadJson(newPath);
         if (oldJ is null || newJ is null) return;
-        var defJ = JsonNode.Parse(JsonSerializer.Serialize(new WalletSettings(), WalletSettings.JsonOptions)) as JsonObject;
         var changed = false;
         foreach (var (k, v) in oldJ)
-        {
-            var nv = newJ[k]; var dv = defJ?[k];
-            var newIsDefault = nv is null || (dv is not null && JsonNode.DeepEquals(nv, dv));
-            if (newIsDefault && v is not null && !JsonNode.DeepEquals(nv, v)) { newJ[k] = v.DeepClone(); changed = true; }
-        }
+            if (!newJ.ContainsKey(k) && v is not null) { newJ[k] = v.DeepClone(); changed = true; }
         if (changed) File.WriteAllText(newPath, newJ.ToJsonString(WalletSettings.JsonOptions));
     }
 
@@ -108,14 +121,16 @@ public static class LegacyData
           (st.Conflicts.Count > 0
               ? $"A DIFFERENT wallet with the same name already exists in the new folder ({string.Join(", ", st.Conflicts)}). The old one will be imported under a new name (wallet.<network>.legacy-<id>.json); nothing is overwritten.\n\n"
               : "") +
-          "Import them into the new folder now? Nothing is overwritten. Old settings (e.g. RPC timeout) are imported where you have not changed them."
+          "Import them into the new folder now? Nothing is overwritten. Old settings (e.g. RPC timeout) are imported only where the new version has no saved value." +
+          (st.SwitchesToMainnet ? "\n\nNOTE: the old settings use MAINNET. After the import the app will start on MAINNET (real KAS)." : "")
         : $"Your wallet data is in\n{st.NewDir}.\n\nThe old folder\n{st.LegacyDir}\nstill contains an ENCRYPTED COPY of your wallet. If you change your password, the old copy keeps the OLD password; " +
-          "if that password ever leaks, the old copy is a risk.\n\nDelete the old copy now? (Make sure you have your recovery phrase backed up.)" +
+          "if that password ever leaks, the old copy is a risk.\n\nDelete the old copy now? (Make sure you have your recovery phrase backed up.)" + KeptText(PlanDelete(st).Keep) +
           (st.MigratedThisRun || st.DeclinedDeletes == 0 ? "" : "\n\n(Reminder — you will not be asked again.)");
 
     public static string ConflictHint(IReadOnlyDictionary<string, string> imported) =>
         string.Join("\n", imported.Where(kv => kv.Key != kv.Value).Select(kv =>
-            $"{kv.Key} was imported as {kv.Value}. To use it, close the app and rename it to {kv.Key} (move the current {kv.Key} aside first)."));
+            $"{kv.Key} was imported as {kv.Value}. To use it, close the app and rename it to {kv.Key} (move the current {kv.Key} aside first)" +
+            $"; if history.{NetToken(kv.Value)}.json exists, rename it to history.{NetToken(kv.Key)}.json the same way."));
 
     private static int ReadDeclines(string newDir)
     {
@@ -130,19 +145,53 @@ public static class LegacyData
         File.WriteAllText(Path.Combine(st.NewDir, ReminderFile), new JsonObject { ["declinedDeletes"] = st.DeclinedDeletes + 1 }.ToJsonString());
     }
 
-    /// <summary>Deletes the legacy folder. Requires confirmation; refuses if both folders are the same, or if any old wallet lacks a
-    /// byte-identical copy (SHA-256) in the new folder.</summary>
-    public static void DeleteLegacy(Status st, bool userConfirmed)
+    public sealed record DeletePlan(IReadOnlyList<string> Delete, IReadOnlyList<string> Keep);
+
+    /// <summary>N1: what DeleteLegacy removes. Only top-level files: wallets with a byte-identical copy in the new folder, history
+    /// files with a byte-identical copy in the new folder, unlock-state.*.json, settings.json (already merged) and the reminder file.
+    /// Everything else (sub-folders such as backup/, *.bak, logs, unknown files) is kept. Names are relative to the old folder.</summary>
+    public static DeletePlan PlanDelete(Status st)
+    {
+        var del = new List<string>(); var keep = new List<string>();
+        if (!Directory.Exists(st.LegacyDir)) return new DeletePlan(del, keep);
+        var newHashes = Directory.Exists(st.NewDir) ? Directory.GetFiles(st.NewDir).Select(Hash).ToHashSet() : new HashSet<string>();
+        foreach (var d in Directory.GetDirectories(st.LegacyDir).Select(Path.GetFileName).OfType<string>().OrderBy(x => x, StringComparer.Ordinal))
+            keep.Add(d + Path.DirectorySeparatorChar);
+        foreach (var path in Directory.GetFiles(st.LegacyDir).OrderBy(x => x, StringComparer.Ordinal))
+        {
+            var f = Path.GetFileName(path);
+            bool Json(string prefix) => f.StartsWith(prefix, StringComparison.Ordinal) && f.EndsWith(".json", StringComparison.Ordinal);
+            var ok = (Json("wallet.") || Json("history.")) ? newHashes.Contains(Hash(path))
+                : Json("unlock-state.") || f == "settings.json" || f == ReminderFile;
+            (ok ? del : keep).Add(f);
+        }
+        return new DeletePlan(del, keep);
+    }
+
+    public static string KeptText(IReadOnlyList<string> kept) => kept.Count == 0 ? ""
+        : $"\n\nThese items in the old folder are NOT deleted (not verified copies of wallet data): {string.Join(", ", kept)}.";
+
+    /// <summary>N1: deletes only the files in <see cref="PlanDelete"/>; never recursive. Removes the old folder only if it ends up empty.
+    /// Requires confirmation; refuses if both folders are the same, or if any old wallet lacks a byte-identical copy (SHA-256)
+    /// in the new folder. Returns the plan that was carried out (Keep = what is left).</summary>
+    public static DeletePlan DeleteLegacy(Status st, bool userConfirmed)
     {
         if (!userConfirmed) throw new InvalidOperationException("Deleting the old wallet copy requires explicit user confirmation.");
         if (st.SameFolder) throw new InvalidOperationException("Old and new data folders are the same folder; nothing was deleted.");
-        if (!Directory.Exists(st.LegacyDir)) return;
+        if (!Directory.Exists(st.LegacyDir)) return new DeletePlan(Array.Empty<string>(), Array.Empty<string>());
         var have = NewHashes(st.NewDir);
         var missing = WalletFiles(st.LegacyDir).Where(f => !have.Contains(Hash(Path.Combine(st.LegacyDir, f)))).ToArray();
         if (missing.Length > 0)
             throw new InvalidOperationException($"Not deleted: the new folder has no identical copy of {string.Join(", ", missing)}. Import first.");
-        foreach (var f in Directory.GetFiles(st.LegacyDir, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
-        Directory.Delete(st.LegacyDir, recursive: true);
-        WalletLog.Warn("Legacy data folder deleted at the user's request.");
+        var plan = PlanDelete(st);
+        foreach (var f in plan.Delete)
+        {
+            var p = Path.Combine(st.LegacyDir, f);
+            File.SetAttributes(p, FileAttributes.Normal);
+            File.Delete(p);
+        }
+        if (plan.Keep.Count == 0 && !Directory.EnumerateFileSystemEntries(st.LegacyDir).Any()) Directory.Delete(st.LegacyDir, recursive: false);
+        WalletLog.Warn($"Legacy data folder: deleted {plan.Delete.Count} verified file(s) at the user's request; kept {plan.Keep.Count} item(s).");
+        return plan;
     }
 }

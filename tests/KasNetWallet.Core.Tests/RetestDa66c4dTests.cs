@@ -131,10 +131,10 @@ public class RetestDa66c4dTests
         using var d = new Dirs();
         d.W(d.Old, "wallet.testnet10.json", "A");
         new WalletSettings { RpcTimeoutSeconds = 42, AutoLockMinutes = 9 }.Save(Path.Combine(d.Old, "settings.json"));
-        new WalletSettings { AutoLockMinutes = 3 }.Save(Path.Combine(d.New, "settings.json")); // RpcTimeout still default
+        new WalletSettings { AutoLockMinutes = 3 }.Save(Path.Combine(d.New, "settings.json")); // RpcTimeout saved (= default)
         LegacyData.Import(LegacyData.Inspect(d.Old, d.New, false));
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(42, s.RpcTimeoutSeconds);
+        Assert.Equal(15, s.RpcTimeoutSeconds); // round 4: a saved value counts as user-set, even when it equals the default
         Assert.Equal(3, s.AutoLockMinutes);
     }
 

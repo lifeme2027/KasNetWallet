@@ -66,10 +66,13 @@ public static class TransferService
         FeeMode mode, double? nodeFeeRate, FeePolicy? feePolicy, MassPolicy? massPolicy)
     {
         var step = Math.Max(10_000UL, minChange / 50);
-        for (var k = 1UL; k <= 60; k++)
+        // N2: 60 fine steps, then 60 coarse (5×) steps, so a block whose minChange came from the fallback estimate
+        // (NKaspa refusal, built == null) still reaches the normal-change region at high pre-Toccata fee rates.
+        for (var k = 1UL; k <= 120; k++)
         {
-            if (amountSompi <= k * step + MinPaymentSompi) break;
-            var cand = amountSompi - k * step;
+            var off = k <= 60 ? k * step : 60 * step + (k - 60) * step * 5;
+            if (amountSompi <= off + MinPaymentSompi) break;
+            var cand = amountSompi - off;
             cand -= cand % 10_000; // round to 0.0001 KAS
             try
             {
@@ -226,7 +229,12 @@ public static class TransferService
             throw new TransferException(SmallAmountText(c, amountSompi) + " The change output cannot fit either, and folding it into the fee would burn too much KAS; to empty the wallet use Send max.");
         // F3: one deterministic rule near the MinimumChange boundary. NKaspa's fold-cap refusal (built == null) and any fold
         // at or above FoldBlockThreshold give the same block; only folds clearly below it are folded with a warning.
-        if (built is null || built.Folded >= FoldBlockThreshold(built.MinimumChange))
+        // N2 (570d403): the fold/block boundary is on the REMAINDER (inputs − amount), not on the folded amount (remainder − fee),
+        // so it does not move with the fee rate. NKaspa's fold-cap refusal depends on the fee; with the fee-based boundary,
+        // high pre-Toccata rates gave FOLD → BLOCK → FOLD → BLOCK. Folded ≤ remainder, so every former block still blocks.
+        // Pre-Toccata only (MinimumChange 10,000,000): post-Toccata the order was already monotonic and the fee-based rule keeps the blocked band narrow.
+        if (built is null || built.Folded >= FoldBlockThreshold(built.MinimumChange)
+            || (built.MinimumChange >= 10_000_000UL && built.Folded > 0 && built.InSum - amountSompi >= FoldBlockThreshold(built.MinimumChange)))
         {
             var minChange = built?.MinimumChange ?? 1_000_000_000_000UL / Math.Max(1UL, c.Mass.EffectiveCap(c.Net)) / 5;
             var suggested = suggest ? SuggestLowerAmount(account, coins, to, amountSompi, minChange, mode, nodeFeeRate, feePolicy, massPolicy) : null;

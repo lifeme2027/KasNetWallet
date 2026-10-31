@@ -247,3 +247,15 @@ The old `MaxFeeFloorSompi`/`MaxFeePercent` keys are ignored.
    - Declining the delete brings one reminder on the next start (marked "Reminder"), then nothing.
    - Import brings `settings.json` (e.g. RpcTimeout=42).
    - If the old and new folders are the same folder, delete and import are refused.
+
+## 11g. Retest 570d403 fixes
+1. **N1:** old folder with an imported wallet plus `backup/`, `wallet.testnet10.json.bak` and `notes.txt`.
+   - The delete offer and the confirmation list `backup/`, `notes.txt` and the `.bak` as kept.
+   - After deleting, only the verified wallet, its identical history, unlock-state and settings are gone; the kept items are still there and the old folder remains.
+   - With nothing else in it, the old folder is removed.
+2. **N3:** a wallet imported under a new name has `history.<net>.legacy-xxxxxxxx.json` next to it; the hint says to rename both.
+3. **N2 (fixed):** pre-Toccata, rate 500 or 1000, balance 0.5 / 1 / 10 KAS: the order is fold → block → change (block from a remainder of 0.095 KAS), and every block offers a lower amount that builds.
+4. **Settings:** a value you saved in the new version (even the default, e.g. RpcTimeout 15) is not overwritten by the old one; only settings missing from the new file are imported.
+5. **Mainnet:** if the old settings use mainnet and the new ones have no network saved yet, the import prompt says the app will start on MAINNET.
+6. **Known issues:**
+   - The node fee estimate does not charge storage mass (only the mass limit is checked).
