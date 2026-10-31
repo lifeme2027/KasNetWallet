@@ -4,15 +4,16 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Current build (retest da66c4d fixes, see §11f; earlier rounds §11d/§11e):** `KasNetWallet-0.1.0-570d403-win-x64.zip`
-  - Built from **commit `570d403d5a715b51184928c61db48823b655a9ed`** in a fresh `git clone` with an empty `git status` (KDW-01).
+- **Current build (retest 570d403 fixes, see §11g; earlier rounds §11d–§11f):** `KasNetWallet-0.1.0-6617246-win-x64.zip`
+  - Built from **commit `6617246db24cf994b125ef8749e9911e80b908b3`** in a fresh `git clone` with an empty `git status` (KDW-01).
   - NKaspa: `5c49251dfc2e1e5396344f802514bc6ee5e828fa`.
   - SDK: 8.0.427.
-  - Build time: 2026-10-31 19:11:05 UTC+8.
-  - **SHA256:** `38bf820adb56c124ee22dd781af35623fb4576bd4ab83eb5d22cc02e918c9c3e`, also listed in `SHA256SUMS`.
-- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-570d403-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 570d403` (InformationalVersion).
+  - Build time: 2026-10-31 19:25:51 UTC+8.
+  - **SHA256:** `fcbcd9fc37a88a6ee67bf5f3a68d56e74728ea56509b3ad2e39327a66a46e604`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-6617246-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 6617246` (InformationalVersion).
 - **Superseded** (all in `kdw-artifacts/superseded/`; do not test them):
+  - `KasNetWallet-0.1.0-570d403-win-x64.zip` (`38bf820a…`, retest da66c4d fixes)
   - `KasNetWallet-0.1.0-da66c4d-win-x64.zip` (`c284661b…`, retest 5747f6b fixes)
   - `KasNetWallet-0.1.0-5747f6b-win-x64.zip` (`601721bd…`, F1–F5)
   - `KaspaDesktopWallet-0.1.0-0c7e556-win-x64.zip` (`066ace85…`, NKaspa 5c49251 adoption, pre-rename)
