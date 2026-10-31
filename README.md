@@ -2,7 +2,7 @@
 
 A Windows (WinForms, .NET 8) desktop wallet for Kaspa. It is a UI plus a thin Core layer over [NKaspa](https://github.com/lifeme2027/NKaspa).
 
-> Alpha software. It is not audited and comes with no warranty. It makes no promise about the safety of funds or any other outcome. Try it on **testnet-10** first. You are responsible for backing up your recovery phrase.
+> Alpha software. It is not audited and comes with no warranty. It makes no promise about the safety of funds or any other outcome. Mainnet is the default and uses real KAS; test with small amounts. You are responsible for backing up your recovery phrase.
 
 ## Scope boundary
 - **This repo:** WinForms UI plus `KasNetWallet.Core`, a thin wallet layer (keystore, account, transfer flow, node wrapper). All Kaspa primitives come from NKaspa: BIP39/BIP32, addresses, tx building, sighash, Schnorr signing, mass/fees, and wRPC.
@@ -37,7 +37,7 @@ docs/DECISIONS.md, docs/NKASPA-REQUESTS.md, docs/patches/
 - Mnemonics and private keys are never logged or written to disk in plaintext.
 
 ## Safety defaults
-- The default network is **testnet-10**. Mainnet requires an explicit opt-in, and every mainnet send shows a separate warning that requires typing a phrase.
+- The default network is **mainnet** (public JSON node `wss://eva.kaspa.green/kaspa/mainnet/wrpc/json`). There is no separate mainnet opt-in or mainnet-only send dialog (D33); every send still shows the normal summary confirmation (default **No**).
 - Imports with a bad checksum, an unknown word, or a wrong word count are rejected.
 - Secrets are wrapped in types that print `[REDACTED]` and refuse JSON serialization, and log lines are redacted.
 - The tester guide is docs/FOR-TESTERS.md.

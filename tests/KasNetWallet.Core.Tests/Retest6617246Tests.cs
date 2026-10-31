@@ -77,13 +77,13 @@ public class Retest6617246Tests
         var st = LegacyData.Inspect(d.Old, d.New, false);
         var text = LegacyData.NoticeText(st);
         Assert.Contains("not imported", text);
-        Assert.Contains("testnet-10", text);
+        Assert.Contains("mainnet", text);
         Assert.DoesNotContain("will start on MAINNET", text);
         Assert.DoesNotContain("MainnetEnabled = false", text); // N5: nothing attributed to the old file it does not say
 
         LegacyData.MergeSettings(d.Old, d.New);
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network);
-        Assert.Equal(newSettings?.Contains("true") == true, s.MainnetEnabled); // only the new file's own value
+        Assert.Equal(WalletNetwork.Mainnet, s.Network);
+        Assert.Equal(newSettings?.Contains("false") != true, s.MainnetEnabled); // only the new file's own value (D33 default true)
     }
 }

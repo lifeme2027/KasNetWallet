@@ -178,8 +178,8 @@ public class MvpReportFixTests
             var p = Path.Combine(dir, "settings.json");
             File.WriteAllText(p, "{ \"Network\": 12345, ");
             var s = WalletSettings.Load(p);
-            Assert.Equal(WalletNetwork.Testnet10, s.Network);
-            Assert.False(s.MainnetEnabled);
+            Assert.Equal(WalletNetwork.Mainnet, s.Network);
+            Assert.True(s.MainnetEnabled);
         }
         finally { Directory.Delete(dir, true); }
     }

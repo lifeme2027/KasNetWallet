@@ -1,3 +1,4 @@
+using KasNetWallet.Core.Rpc;
 using KasNetWallet.Core;
 using KasNetWallet.Core.Transfer;
 
@@ -83,7 +84,7 @@ internal sealed class MainForm : Form
     {
         UseWaitCursor = true; Enabled = false;
         try { await work(); }
-        catch (Exception ex) { SetStatus("Error: " + ex.Message); }
+        catch (Exception ex) { SetStatus(NodeErrorText.Describe(ex, _mgr.Settings.EffectiveWrpcUrl)); }
         finally { UseWaitCursor = false; Enabled = true; _send.Enabled = _sendMax.Enabled = _mgr.IsUnlocked; }
     }
 
@@ -148,7 +149,6 @@ internal sealed class MainForm : Form
             { SetStatus("Send cancelled (fee warning)."); return; }
             ack = true;
         }
-        if (plan.Network == WalletNetwork.Mainnet && !MainnetSendWarning.Confirm(this, plan)) { SetStatus("Mainnet send cancelled."); return; }
         var id = await _mgr.BroadcastAsync(plan, userConfirmed: true, cts.Token, warningsAcknowledged: ack);
         SetStatus($"Submitted tx {id}");
         _amount.Clear();

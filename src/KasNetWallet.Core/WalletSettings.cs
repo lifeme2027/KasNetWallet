@@ -6,10 +6,10 @@ namespace KasNetWallet.Core;
 /// <summary>Non-secret settings, stored as JSON next to the keystore.</summary>
 public sealed class WalletSettings
 {
-    /// <summary>Default is testnet-10. Mainnet must be chosen explicitly (and <see cref="MainnetEnabled"/> set).</summary>
-    public WalletNetwork Network { get; set; } = WalletNetwork.Testnet10;
-    /// <summary>Explicit opt-in switch; without it the UI refuses to select mainnet.</summary>
-    public bool MainnetEnabled { get; set; }
+    /// <summary>D33: default is mainnet.</summary>
+    public WalletNetwork Network { get; set; } = WalletNetwork.Mainnet;
+    /// <summary>D33: no longer gates anything (mainnet needs no opt-in). Kept so older settings.json files still load.</summary>
+    public bool MainnetEnabled { get; set; } = true;
     public string? WrpcUrl { get; set; }
     /// <summary>Per-network mass policy (Toccata before/after). See <see cref="MassPolicy"/>.</summary>
     public Dictionary<WalletNetwork, MassPolicy> MassPolicies { get; set; } = new();
@@ -77,8 +77,8 @@ public sealed class WalletSettings
         return true;
     }
 
-    /// <summary>N9: the first-run copy follows D27. Network and MainnetEnabled are removed (default testnet-10; mainnet must be chosen
-    /// and confirmed again), and the file must pass <see cref="ValidateTypes"/> (N7). A file that cannot be parsed or fails the check is not
+    /// <summary>N9: the first-run copy follows D27. Network and MainnetEnabled are removed (the default network, mainnet, is used;
+    /// the network is chosen again in this version), and the file must pass <see cref="ValidateTypes"/> (N7). A file that cannot be parsed or fails the check is not
     /// carried over; it stays in the legacy folder, whose delete/import prompt then reports it (N4), so nothing is lost silently.</summary>
     internal static void SanitizeMigratedSettings(string path)
     {
@@ -145,16 +145,16 @@ public sealed class WalletSettings
     /// <summary>N13: not persisted. When set, <see cref="Save"/> does not write (the legacy settings.json is never rewritten).</summary>
     [System.Text.Json.Serialization.JsonIgnore] public bool ReadOnlySession { get; private set; }
 
-    /// <summary>N13: when running from the legacy folder after a failed migration, start on testnet-10 with mainnet disabled
-    /// (in memory only; the old file is not changed). Choosing mainnet asks for confirmation again. Returns the notice, or null.</summary>
+    /// <summary>N13/D33: when running from the legacy folder after a failed migration, start on the default network (mainnet) with the
+    /// default node URL (in memory only; the old file is not changed) and settings read-only. Returns the notice, or null.</summary>
     public string? ApplyStartupSafety(string? fallbackReason)
     {
         if (fallbackReason is null) return null;
-        Network = WalletNetwork.Testnet10; MainnetEnabled = false; WrpcUrl = null; ReadOnlySession = true;
-        WalletLog.Warn("Running from the legacy data folder (migration failed); forced testnet-10, settings read-only.");
+        Network = WalletNetwork.Mainnet; MainnetEnabled = true; WrpcUrl = null; ReadOnlySession = true;
+        WalletLog.Warn("Running from the legacy data folder (migration failed); default network (mainnet), settings read-only.");
         return "The data folder could not be moved to the new KasNetWallet location (" + fallbackReason + ").\n" +
-               "The app is using the old KaspaDesktopWallet folder. For safety it starts on testnet-10 with mainnet disabled, " +
-               "and settings changes are not saved to the old settings.json. To use mainnet, choose it again and confirm.\n" +
+               "The app is using the old KaspaDesktopWallet folder. It starts on the default network (mainnet) with the default node, " +
+               "and settings changes are not saved to the old settings.json.\n" +
                "Fix the cause (permissions, a locked KasNetWallet.migrating folder, free space) and restart to finish the move.";
     }
 

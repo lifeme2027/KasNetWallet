@@ -10,23 +10,25 @@ namespace KasNetWallet.Core.Tests;
 public class SettingsAndMnemonicTests
 {
     [Fact]
-    public void DefaultNetwork_IsTestnet10_AndMainnetDisabled()
+    public void D33_DefaultNetwork_IsMainnet_NoOptIn()
     {
         var s = new WalletSettings();
-        Assert.Equal(WalletNetwork.Testnet10, s.Network);
-        Assert.False(s.MainnetEnabled);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network);
+        Assert.True(s.MainnetEnabled);
+        Assert.Equal("wss://eva.kaspa.green/kaspa/mainnet/wrpc/json", s.EffectiveWrpcUrl);
         Assert.Null(s.MassPolicyFor(WalletNetwork.Testnet10).ToccataActive); // auto (DAA score)
         Assert.True(s.MassPolicyFor(WalletNetwork.Testnet10).Resolve(NKaspa.Network.Testnet).ToccataActive); // tn10 activated
     }
 
     [Fact]
-    public async Task Mainnet_Connect_RequiresExplicitEnable()
+    public async Task D33_Mainnet_Connect_NotGatedByMainnetEnabled()
     {
         var dir = Directory.CreateTempSubdirectory().FullName;
         try
         {
-            await using var m = new WalletManager(dir, new WalletSettings { Network = WalletNetwork.Mainnet }, KdfParameters.TestOnly);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => m.ConnectAsync());
+            await using var m = new WalletManager(dir, new WalletSettings { Network = WalletNetwork.Mainnet, MainnetEnabled = false, WrpcUrl = "ws://127.0.0.1:17110" }, KdfParameters.TestOnly);
+            // No "Mainnet is disabled" gate any more: the call reaches URL validation (Borsh port rejected, no network I/O).
+            await Assert.ThrowsAsync<ArgumentException>(() => m.ConnectAsync());
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -53,7 +55,7 @@ public class SettingsAndMnemonicTests
         var dir = Directory.CreateTempSubdirectory().FullName;
         try
         {
-            var m = new WalletManager(dir, new WalletSettings(), KdfParameters.TestOnly);
+            var m = new WalletManager(dir, new WalletSettings { Network = WalletNetwork.Testnet10 }, KdfParameters.TestOnly);
             m.CreateOrImport(TestData.AbandonMnemonic, "old-password-1");
             m.ChangePassword("old-password-1", "new-password-2");
             Assert.Throws<WrongPasswordException>(() => m.Unlock("old-password-1"));

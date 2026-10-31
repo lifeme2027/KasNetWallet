@@ -206,7 +206,7 @@ public class Round2Tests
             Assert.Equal(d.ClipboardClearSeconds, s.ClipboardClearSeconds);
             Assert.Equal(d.AutoLockMinutes, s.AutoLockMinutes);
             Assert.Equal(d.ConfirmationDepthDaa, s.ConfirmationDepthDaa);
-            Assert.Equal(WalletNetwork.Testnet10, s.Network);
+            Assert.Equal(WalletNetwork.Mainnet, s.Network);
             Assert.Null(s.WrpcUrl);
             Assert.Equal(10, s.FeePolicy.RateMultiplier);
             Assert.Equal(1.0, s.FeePolicy.WarnPercent);

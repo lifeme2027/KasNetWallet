@@ -20,7 +20,7 @@ public class Retest506a924Tests
 
     // ---------- N13 ----------
     [Fact]
-    public void N13_MigrationFails_FallsBackToLegacy_ForcedTestnet_OldFileUntouched()
+    public void N13_MigrationFails_FallsBackToLegacy_DefaultMainnet_OldFileUntouched()
     {
         using var d = new Dirs();
         d.W(d.Old, "settings.json", OldMain);
@@ -34,8 +34,8 @@ public class Retest506a924Tests
         var s = WalletSettings.Load(path);
         Assert.Equal(WalletNetwork.Mainnet, s.Network); // what the old file says…
         var note = s.ApplyStartupSafety(reason);
-        Assert.NotNull(note); Assert.Contains("testnet-10", note); Assert.Contains("confirm", note);
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled); // …is not used
+        Assert.NotNull(note); Assert.Contains("mainnet", note); Assert.DoesNotContain("confirm", note);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled); // D33: default mainnet, default node URL
         Assert.Equal(7, s.AutoLockMinutes);
         s.Network = WalletNetwork.Mainnet; s.MainnetEnabled = true;
         s.Save(path);
@@ -58,12 +58,12 @@ public class Retest506a924Tests
     }
 
     [Fact]
-    public void N13_UnreadableOldSettings_Fallback_StillTestnet()
+    public void N13_UnreadableOldSettings_Fallback_DefaultMainnet()
     {
         var s = WalletSettings.Load(Path.Combine(Path.GetTempPath(), "kdw-r10-missing", "settings.json"));
         s.Network = WalletNetwork.Mainnet; s.MainnetEnabled = true;
         Assert.NotNull(s.ApplyStartupSafety("IOException: denied"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled);
     }
 
     // ---------- N14 ----------
@@ -97,7 +97,7 @@ public class Retest506a924Tests
         using var d = new Dirs();
         d.W(d.Old, "settings.json", json);
         var s = WalletSettings.Load(Path.Combine(d.Old, "settings.json"), out var notes);
-        Assert.Equal(WalletNetwork.Testnet10, s.Network);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network);
         Assert.Contains(notes, n => n.StartsWith(expected));
         Assert.DoesNotContain(notes, n => n.StartsWith("Network=-"));
     }

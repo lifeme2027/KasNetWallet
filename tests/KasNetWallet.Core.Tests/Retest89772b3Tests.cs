@@ -112,7 +112,7 @@ public class Retest89772b3Tests
         Assert.False(j.ContainsKey("Network")); Assert.False(j.ContainsKey("MainnetEnabled"));
         Assert.Equal(42, j["RpcTimeoutSeconds"]!.GetValue<int>());
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class Retest89772b3Tests
     }
 
     [Theory] // mn5 + N5: the note names only the new file's saved network, never an old MainnetEnabled value
-    [InlineData("{\"MainnetEnabled\": false}", "the default network, testnet-10")]
+    [InlineData("{\"MainnetEnabled\": false}", "the default network, mainnet")]
     [InlineData("{\"Network\": \"Testnet10\"}", "saved in the new settings (Testnet10)")]
     [InlineData("{\"Network\": \"Mainnet\", \"MainnetEnabled\": true}", "saved in the new settings (Mainnet)")]
     public void N5_MainnetNote_DescribesNewSettings(string newSettings, string expect)

@@ -97,7 +97,7 @@ public class Retest806e349Tests
         var j = JsonNode.Parse(d.R(d.New, "settings.json"))!.AsObject();
         Assert.DoesNotContain(j, kv => kv.Key.Equals("Network", StringComparison.OrdinalIgnoreCase) || kv.Key.Equals("MainnetEnabled", StringComparison.OrdinalIgnoreCase));
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled); Assert.Equal(42, s.RpcTimeoutSeconds);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled); Assert.Equal(42, s.RpcTimeoutSeconds);
         Assert.Equal("W", d.R(d.New, "wallet.testnet10.json"));
         Assert.Contains("Mainnet", d.R(d.Old, "settings.json")); // legacy copy untouched
         Assert.True(LegacyData.Inspect(d.Old, d.New, true).OldUsesMainnet);
@@ -115,7 +115,7 @@ public class Retest806e349Tests
         Assert.True(d.E(d.New, "wallet.testnet10.json"));
         Assert.Equal(bad, d.R(d.Old, "settings.json"));
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled);
         var st = LegacyData.Inspect(d.Old, d.New, true);
         Assert.NotNull(st.SettingsError);
         Assert.Throws<InvalidOperationException>(() => LegacyData.DeleteLegacy(st, true));

@@ -279,3 +279,13 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - KasWallet (`KasWallet.Core`, `WalletConfig`) builds `ws://{NodeIP}:{NodePort}` (default: a LAN node at port 17110) and passes it to the native `kas_conn.dll`, which uses rusty-kaspa's wRPC client. 17110 is the default **Borsh** wRPC port (mainnet; 17210 testnet-10).
 - NKaspa, and therefore KasNetWallet, speaks **JSON** wRPC only (default ports 18110 mainnet, 18210 testnet-10, enabled with `--rpclisten-json`). Pointing it at a Borsh port failed with unclear InvalidOperationExceptions.
 - `ResilientWalletNode.ValidateUrl` now rejects 17110/17210/17310 before connecting and names the matching JSON port. This does not make an unreachable node reachable: the node must listen for JSON wRPC on a port the PC can reach.
+
+## D33 — Mainnet is the default; no mainnet opt-in or mainnet send dialog; clear connect-failure status (jun, 2026-10-31 22:48 UTC+8)
+
+Supersedes D10 (default testnet-10 and mainnet gate), the mainnet send warning, and the testnet-10 part of N13/D30.
+- `WalletSettings.Network` defaults to **Mainnet**. The default node stays the public JSON node `wss://eva.kaspa.green/kaspa/mainnet/wrpc/json`.
+- `MainnetEnabled` no longer gates anything (default true, kept only so older settings.json files load). Core's connect/broadcast checks and the start screen's "Enable mainnet" dialog are removed.
+- The mainnet-only send dialog (`MainnetSendWarning`, type `SEND MAINNET`) is removed. The normal send-summary confirmation (default No) and the fee-warning confirmation stay.
+- Legacy fallback (N13): starts on the default network (mainnet) with the default node URL, settings still read-only. Migration notices name mainnet as the default.
+- Connect failures: an unreachable node made each attempt time out (`TaskCanceledException` from the per-call timeout and the 20 s UI timeout). These were already caught, but the status showed "A task was canceled." `NodeErrorText` now shows "Connection failed: node <url> did not answer in time…". Attempts stay bounded (max 4, exponential backoff, only on Connect/Refresh clicks; no timer reconnect).
+- Tests: `NodeErrorTextTests`, D33 tests in `Steering3Tests`, and updated default-network expectations.

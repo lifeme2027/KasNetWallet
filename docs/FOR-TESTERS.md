@@ -46,7 +46,7 @@ Times are Asia/Shanghai (UTC+8).
 - **Unmodified:** the wallet does not modify NKaspa. Gaps are recorded in `docs/NKASPA-REQUESTS.md` (R1–R10) and `docs/patches/`.
 
 ## 3. Network and node
-- **Default network:** **testnet-10**. testnet-11 is not wired (TBD).
+- **Default network:** **mainnet** (D33). testnet-10 can be chosen on the start screen. testnet-11 is not wired (TBD).
 - **Default endpoint:** `ws://127.0.0.1:18210`. **Confirmed:** the tn10 JSON wRPC port is 18210 (17210 is Borsh, 16210 is gRPC; source: rusty-kaspa `network.rs default_json_rpc_port`).
   - **kaspad must be started with `--rpclisten-json`.** Without it, nothing listens on 18210. Example: `kaspad --testnet --netsuffix=10 --rpclisten-json=default --utxoindex`.
   - The wallet speaks JSON only. A Borsh port (17210) does not work.
@@ -56,11 +56,8 @@ Times are Asia/Shanghai (UTC+8).
   - gRPC ports 16110/16210/16310 and non-ws schemes are rejected with a message (KW-062).
   - The node's `networkId` must equal the wallet network, or the connection is refused (KW-066).
   - Sending is refused when `isSynced=false` (KW-067).
-- **Mainnet switch:** off by default (`MainnetEnabled=false`).
-  - To enable it, select Mainnet and accept a risk dialog (default button = No).
-  - Core refuses to connect or broadcast on mainnet without the flag.
-  - **Every mainnet send** shows a confirmation dialog plus a **second red dialog** that requires typing `SEND MAINNET`.
-  - During acceptance testing, leave mainnet disabled.
+- **Mainnet:** the default network; no opt-in switch and no mainnet-only send dialog (D33). Every send shows the normal summary confirmation (default = No).
+  - Ports 17110/17210/17310 (Borsh) are rejected with a hint to use the JSON port (D32).
 - **Timeouts and reconnect:**
   - Per-call timeout is `RpcTimeoutSeconds` (default 15 s).
   - On WebSocket, IO, or timeout failures the wallet reconnects with backoff of 1 s, 2 s, then 4 s (capped at 30 s, 4 attempts), then reports "Node unavailable".
@@ -80,7 +77,7 @@ Times are Asia/Shanghai (UTC+8).
   - an empty password in the unlock box
   - a 4th attempt during the delay (shows "please wait N s")
   - a corrupted, truncated, or tampered wallet file (bad JSON, bad base64, unknown network, KDF out of range)
-  - a corrupt settings.json (falls back to testnet-10 with mainnet disabled)
+  - a corrupt settings.json (falls back to defaults: mainnet)
   - With a corrupt wallet file, the start screen shows "Wallet file problem: …" instead of crashing at launch.
   - Global exception handlers (ThreadException, UnhandledException, UnobservedTaskException) log only the redacted message.
 - **KDF limits (KDW-08):** the file must have m ≤ 1 GiB, t ≤ 10, p ≤ 16, and the file must be ≤ 64 KiB. Anything above is rejected *before* Argon2 runs.

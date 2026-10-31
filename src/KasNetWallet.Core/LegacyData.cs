@@ -163,8 +163,8 @@ public static class LegacyData
     /// file except its Network value.</summary>
     internal static string MainnetNote(Status st) => !st.OldUsesMainnet ? ""
         : "\n\nNOTE: the old settings used MAINNET. The network choice is not imported (nor MainnetEnabled): the app keeps " +
-          (st.NewSavedNetwork is null ? "the default network, testnet-10" : $"the network saved in the new settings ({st.NewSavedNetwork})") +
-          ". To use mainnet, choose it again in this version; it asks for confirmation.";
+          (st.NewSavedNetwork is null ? "the default network, mainnet" : $"the network saved in the new settings ({st.NewSavedNetwork})") +
+          ". Choose the network on the start screen.";
 
     /// <summary>N4: a settings file that cannot be read blocks the import/delete; say so up front.</summary>
     internal static string SettingsErrorNote(Status st) => st.SettingsError is null ? ""

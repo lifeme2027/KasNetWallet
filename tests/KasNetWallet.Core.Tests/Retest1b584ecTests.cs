@@ -67,7 +67,8 @@ public class Retest1b584ecTests
         using var d = new Dirs();
         d.W(d.New, "settings.json", bad);
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"), out _);
-        Assert.Equal(WalletNetwork.Testnet10, s.Network); Assert.False(s.MainnetEnabled);
+        // D33: default is mainnet. A duplicate "Network" key keeps the lenient last-value-wins load (Testnet10 in that case).
+        Assert.Equal(bad.Contains("\"Network\":\"Testnet10\"") ? WalletNetwork.Testnet10 : WalletNetwork.Mainnet, s.Network); Assert.True(s.MainnetEnabled);
     }
 
     // ---------- N10: "fr" (first run) ----------
@@ -86,7 +87,7 @@ public class Retest1b584ecTests
             Assert.DoesNotContain(j, kv => kv.Key.Equals("Network", StringComparison.OrdinalIgnoreCase));
         }
         var s = WalletSettings.Load(Path.Combine(d.New, "settings.json"));
-        Assert.Equal(WalletNetwork.Testnet10, s.Network);
+        Assert.Equal(WalletNetwork.Mainnet, s.Network);
         _ = LegacyData.NoticeText(LegacyData.Inspect(d.Old, d.New, true));
     }
 

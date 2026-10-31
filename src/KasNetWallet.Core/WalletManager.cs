@@ -156,8 +156,6 @@ public sealed class WalletManager : IAsyncDisposable
         if (_node != null) await _node.DisposeAsync();
         _node = null;
         _highestDaaSeen = 0; // G3: new node, new DAA history
-        if (Settings.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled)
-            throw new InvalidOperationException("Mainnet is disabled. Enable it explicitly in settings.");
         var node = ResilientWalletNode.ForUrl(Settings.EffectiveWrpcUrl, TimeSpan.FromSeconds(Settings.RpcTimeoutSeconds));
         NodeStatus st;
         try { st = await node.GetStatusAsync(ct); }
@@ -258,7 +256,6 @@ public sealed class WalletManager : IAsyncDisposable
 
     public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default, bool warningsAcknowledged = false)
     {
-        if (plan.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled) throw new TransferException("Mainnet is disabled.");
         var st = await Node.GetStatusAsync(ct);
         string id;
         try { id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct, warningsAcknowledged); }
