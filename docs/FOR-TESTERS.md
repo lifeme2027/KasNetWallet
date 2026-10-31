@@ -4,15 +4,15 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Current build (retest round 2, N1–N7):** `KaspaDesktopWallet-0.1.0-f31dc83-win-x64.zip`
-  - Built from **commit `f31dc83b339eb6e367584de900ad9f5a43d1ed01`** in a fresh `git clone` with an empty `git status` (KDW-01).
+- **Current build (retest round 3, R3-1–R3-8):** `KaspaDesktopWallet-0.1.0-cc6337e-win-x64.zip`
+  - Built from **commit `cc6337e3e0001aa6f655cb17975364b37643abb4`** in a fresh `git clone` with an empty `git status` (KDW-01).
   - NKaspa: `f41c86a6d36da37243bcdd41e76662ac6c25b349`.
   - SDK: 8.0.427.
-  - Build time: 2026-10-31 16:53:27 UTC+8.
-  - **SHA256:** `42180cc6dc9ae5ff5dac79a9c20022bec8319215c663c4d6895e496a0dee68fb`, also listed in `SHA256SUMS`.
-- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-f31dc83-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep f31dc83` (InformationalVersion).
-- **Superseded:** `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes) and the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
+  - Build time: 2026-10-31 17:04:29 UTC+8.
+  - **SHA256:** `e77e9b53707992c4d80e131eefdb18e77871e626382844ac06709601623ebb65`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KaspaDesktopWallet-0.1.0-cc6337e-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KaspaWallet.Core.dll | grep cc6337e` (InformationalVersion).
+- **Superseded:** `…-f31dc83-win-x64.zip` (`42180cc6…`, round 2), `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes) and the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
 - **Form:** portable zip with no installer. Contents:
   - the publish output of `dotnet publish src/KaspaWallet.WinForms -c Release -r win-x64 --self-contained false`
   - NOTICE
@@ -161,7 +161,7 @@ Times are Asia/Shanghai (UTC+8).
   - Example: 0.13 KAS from a 1 KAS UTXO.
 - **Send max with too many UTXOs (R3-7):** the wallet uses as many of the largest UTXOs as exactly fit the mass limit. A warning then says "Only N of M UTXOs fit … X KAS will STAY". To consolidate, Send max to your own address until 1 UTXO is left.
 - **Very small amounts (R3-4):** "Amount too small … storage mass (KIP-9)". At the 100,000 mass cap the practical minimum is about 0.1–0.2 KAS.
-- **Unlock state not writable (R3-1):** e.g. a read-only file or folder, or a directory with the same name. After a wrong password the strictest 30 s delay applies to every attempt, and a notice says the counter could not be saved. Note: as root/Administrator a 0400 file is still writable, so use a directory named `unlock-state.json` to test this.
+- **Unlock state not writable (R3-1):** e.g. a read-only file or folder, or a directory with the same name. After a wrong password the strictest 30 s delay applies to every attempt, and a notice says the counter could not be saved. Note: as root/Administrator a 0400 file is still writable, so use a directory named `unlock-state.testnet10.json` in the wallet folder to test this.
 - **Deleting or corrupting the state file resets the counter (R3-2).** This is intended and documented in DECISIONS D18. Brute-force protection comes from the keystore's Argon2id cost, not from the counter.
 - **State file larger than 4 KB (R3-3):** treated as corrupt and reset, with a notice.
 
