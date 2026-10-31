@@ -215,3 +215,9 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
   - `WalletManager` still passes the node's virtual DAA score (`WithDaaScore`), so live tn10 resolves to `PostToccata`.
 - **Tests.** `NKaspaDea2697Tests` (13 tests, counting theory cases). Two `NKaspa5c49251Tests` assertions and the pre-Toccata `G2_FoldBlockChange_IsMonotonic` case (base fee 2,036 → 203,600) were updated to the 100 sompi/gram rule.
 - The mainnet warning now names NKaspa 0.1.10-alpha.
+
+## D26 — Legacy folder: merge settings before delete (M1), honest mainnet note (M2)
+
+- **M1.** `settings.json` in the old folder is in the delete plan, but it used to be merged only by Import. When there was nothing to import (identical copies), deleting the old folder dropped the old settings without notice. `DeleteLegacy` now runs `MergeSettings` (absent keys only, same rule as D24) before it deletes anything. If the merge throws, nothing is deleted. The delete prompt says the old settings are merged first.
+- **M2.** The "will start on MAINNET" note is shown only when the merged settings will also have `MainnetEnabled = true`, i.e. the new file's key if present, else the old one's, else false (`LegacyData.MainnetEnabledAfterMerge`). If the old settings select Mainnet with mainnet disabled, the note says the network setting will be MAINNET but the app will not connect to mainnet until mainnet is enabled or testnet-10 is chosen. The wallet file and settings formats are unchanged.
+- Tests: `Retest6617246Tests` (8).

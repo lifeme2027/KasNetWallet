@@ -16,7 +16,7 @@ public static class LegacyData
     public const int MaxDeleteOffers = 2;
 
     public sealed record Status(string LegacyDir, string NewDir, bool MigratedThisRun, IReadOnlyList<string> LegacyWallets,
-        IReadOnlyList<string> ImportableWallets, IReadOnlyList<string> Conflicts, int DeclinedDeletes, bool SwitchesToMainnet = false)
+        IReadOnlyList<string> ImportableWallets, IReadOnlyList<string> Conflicts, int DeclinedDeletes, bool SwitchesToMainnet = false, bool MainnetEnabledAfterImport = false)
     {
         public bool LegacyHasWallets => LegacyWallets.Count > 0;
         /// <summary>Old wallets with no byte-identical copy in the new folder (they are invisible to the user).</summary>
@@ -43,7 +43,8 @@ public static class LegacyData
         var have = NewHashes(newDir);
         var importable = legacy.Where(f => !have.Contains(Hash(Path.Combine(legacyDir, f)))).ToArray();
         var conflicts = importable.Where(f => File.Exists(Path.Combine(newDir, f))).ToArray();
-        return new Status(legacyDir, newDir, migratedThisRun, legacy, importable, conflicts, ReadDeclines(newDir), WouldSwitchToMainnet(legacyDir, newDir));
+        return new Status(legacyDir, newDir, migratedThisRun, legacy, importable, conflicts, ReadDeclines(newDir), WouldSwitchToMainnet(legacyDir, newDir),
+            MainnetEnabledAfterMerge(legacyDir, newDir));
     }
 
     private static JsonObject? ReadJson(string path)
@@ -61,6 +62,15 @@ public static class LegacyData
         if (!text.Equals("mainnet", StringComparison.OrdinalIgnoreCase)) return false;
         var newJ = ReadJson(Path.Combine(newDir, "settings.json"));
         return newJ is null || !newJ.ContainsKey("Network");
+    }
+
+    /// <summary>M2: the MainnetEnabled value after <see cref="MergeSettings"/>: the new file's key if present, else the old one's, else false.</summary>
+    internal static bool MainnetEnabledAfterMerge(string legacyDir, string newDir)
+    {
+        static bool? Read(JsonObject? j) => j?["MainnetEnabled"] is JsonNode n && n.GetValueKind() is JsonValueKind.True or JsonValueKind.False ? n.GetValue<bool>() : null;
+        var newJ = ReadJson(Path.Combine(newDir, "settings.json"));
+        if (newJ is not null && newJ.ContainsKey("MainnetEnabled")) return Read(newJ) ?? false;
+        return Read(ReadJson(Path.Combine(legacyDir, "settings.json"))) ?? false;
     }
 
     /// <summary>The network token of a wallet file name: wallet.&lt;token&gt;.json (e.g. testnet10, testnet10.legacy-1a2b3c4d).</summary>
@@ -116,15 +126,23 @@ public static class LegacyData
         if (changed) File.WriteAllText(newPath, newJ.ToJsonString(WalletSettings.JsonOptions));
     }
 
+    /// <summary>M2: the note matches what actually happens: start on mainnet only when MainnetEnabled will also be true.</summary>
+    internal static string MainnetNote(Status st) => !st.SwitchesToMainnet ? ""
+        : st.MainnetEnabledAfterImport
+            ? "\n\nNOTE: the old settings use MAINNET. After the import the app will start on MAINNET (real KAS)."
+            : "\n\nNOTE: the old settings select MAINNET, but mainnet is not enabled in them (MainnetEnabled = false). After the import the network setting will be MAINNET, " +
+              "but the app will not connect to mainnet until you enable mainnet in the settings or switch back to testnet-10.";
+
     public static string NoticeText(Status st) => st.HasImportable
         ? $"The old folder\n{st.LegacyDir}\ncontains wallet file(s) that this version does not show: {string.Join(", ", st.ImportableWallets)}.\n\n" +
           (st.Conflicts.Count > 0
               ? $"A DIFFERENT wallet with the same name already exists in the new folder ({string.Join(", ", st.Conflicts)}). The old one will be imported under a new name (wallet.<network>.legacy-<id>.json); nothing is overwritten.\n\n"
               : "") +
           "Import them into the new folder now? Nothing is overwritten. Old settings (e.g. RPC timeout) are imported only where the new version has no saved value." +
-          (st.SwitchesToMainnet ? "\n\nNOTE: the old settings use MAINNET. After the import the app will start on MAINNET (real KAS)." : "")
+          MainnetNote(st)
         : $"Your wallet data is in\n{st.NewDir}.\n\nThe old folder\n{st.LegacyDir}\nstill contains an ENCRYPTED COPY of your wallet. If you change your password, the old copy keeps the OLD password; " +
-          "if that password ever leaks, the old copy is a risk.\n\nDelete the old copy now? (Make sure you have your recovery phrase backed up.)" + KeptText(PlanDelete(st).Keep) +
+          "if that password ever leaks, the old copy is a risk.\n\nDelete the old copy now? (Make sure you have your recovery phrase backed up.)" +
+          (File.Exists(Path.Combine(st.LegacyDir, "settings.json")) ? "\nOld settings are first merged into the new settings (only values the new version has not saved)." : "") + KeptText(PlanDelete(st).Keep) +
           (st.MigratedThisRun || st.DeclinedDeletes == 0 ? "" : "\n\n(Reminder — you will not be asked again.)");
 
     public static string ConflictHint(IReadOnlyDictionary<string, string> imported) =>
@@ -183,6 +201,9 @@ public static class LegacyData
         var missing = WalletFiles(st.LegacyDir).Where(f => !have.Contains(Hash(Path.Combine(st.LegacyDir, f)))).ToArray();
         if (missing.Length > 0)
             throw new InvalidOperationException($"Not deleted: the new folder has no identical copy of {string.Join(", ", missing)}. Import first.");
+        // M1: settings.json is in the delete plan, so merge it first (only absent keys; same rule as Import).
+        // If the merge fails, the exception aborts the delete and nothing is lost.
+        MergeSettings(st.LegacyDir, st.NewDir);
         var plan = PlanDelete(st);
         foreach (var f in plan.Delete)
         {
