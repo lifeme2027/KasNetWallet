@@ -17,6 +17,13 @@ public sealed class TransferException : Exception
     public TransferException(string message) : base(message) { }
 }
 
+/// <summary>Submission timed out/disconnected: the tx may or may not be accepted. Re-submitting the same signed tx cannot double-spend.</summary>
+public sealed class TransferStatusUnknownException : Exception
+{
+    public TransferStatusUnknownException(string txId) : base($"Submission status unknown (node did not answer). The transaction {txId} may already be in the network — refresh balance/history before trying again.") => TransactionId = txId;
+    public string TransactionId { get; }
+}
+
 /// <summary>Build → (user confirms) → broadcast. Signing uses NKaspa TransactionBuilder (BIP-340 Schnorr).</summary>
 public static class TransferService
 {
@@ -75,11 +82,18 @@ public static class TransferService
         if (paid != amountSompi || outSum > inSum) throw new TransferException("Built transaction does not pay the requested amount.");
         if (!tx.Verify(entries)) throw new TransferException("Signature verification failed.");
         var fee = inSum - outSum;
-        if (maxFeeSompi is ulong cap && fee > cap) throw new TransferException($"Fee {Kas.Format(fee)} KAS exceeds limit {Kas.Format(cap)} KAS.");
         var mass = MassCalculator.Calculate(tx, entries);
+        var relayMass = MassCalculator.RelayMass(mass);
+        var rateUsed = mode == FeeMode.NodeEstimate && nodeFeeRate is double r2 ? Math.Max(FeeRate.MinimumRelaySompiPerGram, (ulong)Math.Ceiling(r2)) : FeeRate.MinimumRelaySompiPerGram;
+        var expectedFee = Math.Max(MassCalculator.MinimumRelayFee(mass), checked(rateUsed * relayMass));
+        // Change below NKaspa's minimum change is silently merged into the fee; surface it explicitly.
+        var folded = change == 0 && fee > expectedFee ? fee - expectedFee : 0;
+        if (maxFeeSompi is ulong cap && fee > cap)
+            throw new TransferException($"Fee {Kas.Format(fee)} KAS exceeds the fee cap {Kas.Format(cap)} KAS" +
+                (folded > 0 ? $" ({Kas.Format(folded)} KAS of leftover change is too small for a change output and would be added to the fee). Adjust the amount, send the full balance, or raise MaxFee in settings." : "."));
         if (MassCalculator.RelayMass(mass) > massPolicy.EffectiveCap(net))
             throw new TransferException($"Transaction mass {MassCalculator.RelayMass(mass)} exceeds configured cap {massPolicy.EffectiveCap(net)}; consolidate UTXOs or send less.");
-        return new TransferPlan(tx, account.Network, account.Address, payee.ToString(), amountSompi, fee, change, inSum, tx.Inputs.Count, MassCalculator.RelayMass(mass));
+        return new TransferPlan(tx, account.Network, account.Address, payee.ToString(), amountSompi, fee, change, inSum, tx.Inputs.Count, relayMass, folded, maxFeeSompi ?? 0);
     }
 
     /// <summary>Submits only when the caller passes <paramref name="userConfirmed"/>=true and the node's network matches.</summary>
@@ -91,7 +105,12 @@ public static class TransferService
         if (!string.Equals(status.NetworkId, plan.Network.ExpectedNodeNetworkId(), StringComparison.OrdinalIgnoreCase))
             throw new TransferException($"Node network '{status.NetworkId}' does not match wallet network '{plan.Network.ExpectedNodeNetworkId()}'.");
         if (!status.IsSynced) throw new TransferException("Node is not synced.");
-        var id = await node.SubmitAsync(plan.Transaction, ct).ConfigureAwait(false);
+        string id;
+        try { id = await node.SubmitAsync(plan.Transaction, ct).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException or System.Net.WebSockets.WebSocketException)
+        {
+            throw new TransferStatusUnknownException(plan.TransactionId);
+        }
         plan.Broadcast = true;
         return id;
     }

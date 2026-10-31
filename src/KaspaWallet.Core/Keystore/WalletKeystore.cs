@@ -10,6 +10,12 @@ public sealed class WrongPasswordException : Exception
     public WrongPasswordException() : base("Wrong password or corrupted keystore.") { }
 }
 
+/// <summary>The wallet file is unreadable, tampered with, or in an unsupported format. Message is user-safe.</summary>
+public sealed class KeystoreCorruptException : IOException
+{
+    public KeystoreCorruptException(string detail) : base("The wallet file is corrupted or unsupported (" + detail + "). Restore it from backup or re-import your recovery phrase.") { }
+}
+
 /// <summary>
 /// Encrypts the BIP39 mnemonic with AES-256-GCM under a key from Argon2id(password, salt).
 /// Associated data binds version, network and address. Byte buffers holding secrets are zeroed after use;
@@ -64,14 +70,17 @@ public static class WalletKeystore
     public static string Decrypt(KeystoreFile file, string password)
     {
         if (file.Version != 1 || file.Kdf != "argon2id" || file.Cipher != "aes-256-gcm")
-            throw new InvalidDataException("Unsupported keystore format.");
+            throw new KeystoreCorruptException("unsupported format");
         var kdf = new KdfParameters(file.Argon2MemoryKiB, file.Argon2Iterations, file.Argon2Parallelism);
         kdf.Validate();
-        var salt = Convert.FromBase64String(file.Salt);
-        var nonce = Convert.FromBase64String(file.Nonce);
-        var cipher = Convert.FromBase64String(file.Ciphertext);
-        var tag = Convert.FromBase64String(file.Tag);
-        if (salt.Length != SaltLen || nonce.Length != NonceLen || tag.Length != TagLen) throw new InvalidDataException("Corrupted keystore.");
+        byte[] salt, nonce, cipher, tag;
+        try
+        {
+            salt = Convert.FromBase64String(file.Salt ?? ""); nonce = Convert.FromBase64String(file.Nonce ?? "");
+            cipher = Convert.FromBase64String(file.Ciphertext ?? ""); tag = Convert.FromBase64String(file.Tag ?? "");
+        }
+        catch (FormatException) { throw new KeystoreCorruptException("bad encoding"); }
+        if (salt.Length != SaltLen || nonce.Length != NonceLen || tag.Length != TagLen || cipher.Length == 0) throw new KeystoreCorruptException("bad field length");
         var plain = new byte[cipher.Length];
         var key = DeriveKey(password ?? "", salt, kdf);
         try
@@ -94,13 +103,14 @@ public static class WalletKeystore
     /// <summary>Decrypts and derives the account; also checks the stored address matches.</summary>
     public static HdAccount Unlock(KeystoreFile file, string password)
     {
-        var network = Enum.Parse<WalletNetwork>(file.Network);
+        if (!Enum.TryParse<WalletNetwork>(file.Network, ignoreCase: false, out var network) || !Enum.IsDefined(network))
+            throw new KeystoreCorruptException("unknown network");
         var mnemonic = Decrypt(file, password);
         var acc = HdAccount.FromMnemonic(mnemonic, network);
         if (acc.Address != file.Address)
         {
             acc.Dispose();
-            throw new InvalidDataException("Keystore address does not match the decrypted key.");
+            throw new KeystoreCorruptException("address mismatch");
         }
         return acc;
     }
@@ -109,12 +119,37 @@ public static class WalletKeystore
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(file, Opts));
+        WriteOwnerOnly(tmp, JsonSerializer.Serialize(file, Opts));
         File.Move(tmp, path, overwrite: true);
     }
 
-    public static KeystoreFile Load(string path) =>
-        JsonSerializer.Deserialize<KeystoreFile>(File.ReadAllText(path), Opts) ?? throw new InvalidDataException("Empty keystore.");
+    /// <summary>Writes a file readable only by the current user on Linux/macOS (0600). Windows: inherits the %APPDATA% ACL.</summary>
+    public static void WriteOwnerOnly(string path, string contents)
+    {
+        if (OperatingSystem.IsWindows()) { File.WriteAllText(path, contents); return; }
+        var opts = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite };
+        using (var fs = new FileStream(path, opts)) using (var w = new StreamWriter(fs)) w.Write(contents);
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    /// <summary>Loads and structurally validates; any malformed content becomes <see cref="KeystoreCorruptException"/>.</summary>
+    public static KeystoreFile Load(string path)
+    {
+        KeystoreFile? f;
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 64 * 1024) throw new KeystoreCorruptException("file too large");
+            f = JsonSerializer.Deserialize<KeystoreFile>(File.ReadAllText(path), Opts);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or FormatException or InvalidOperationException)
+        { throw new KeystoreCorruptException("unreadable JSON"); }
+        if (f is null) throw new KeystoreCorruptException("empty file");
+        if (!Enum.TryParse<WalletNetwork>(f.Network, false, out var n) || !Enum.IsDefined(n)) throw new KeystoreCorruptException("unknown network");
+        if (string.IsNullOrEmpty(f.Address)) throw new KeystoreCorruptException("missing address");
+        new KdfParameters(f.Argon2MemoryKiB, f.Argon2Iterations, f.Argon2Parallelism).Validate();
+        return f;
+    }
 
     private static byte[] AssociatedData(KeystoreFile f) =>
         Encoding.UTF8.GetBytes($"kdw-keystore|v{f.Version}|{f.Network}|{f.Address}|{f.Argon2MemoryKiB}|{f.Argon2Iterations}|{f.Argon2Parallelism}");

@@ -17,7 +17,7 @@ internal sealed class MnemonicForm : Form
         Text = import ? "Import wallet" : "Create wallet"; StartPosition = FormStartPosition.CenterParent;
         AutoSize = true; AutoSizeMode = AutoSizeMode.GrowAndShrink; FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
         var g = Theme.Grid(1);
-        g.Controls.Add(Theme.Label(import ? "Enter your 12/24-word BIP39 mnemonic:" : "Your new recovery phrase (BIP39, 24 words). Path m/44'/111111'/0'/0/0."));
+        g.Controls.Add(Theme.Label(import ? "Enter your 12/15/18/21/24-word BIP39 mnemonic (words separated by spaces):" : "Your new recovery phrase (BIP39, 24 words). Path m/44'/111111'/0'/0/0."));
         g.Controls.Add(_words);
         if (!import)
         {

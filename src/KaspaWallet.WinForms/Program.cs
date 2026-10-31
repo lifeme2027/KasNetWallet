@@ -7,6 +7,11 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // KDW-05: no unhandled-exception dialog with stack traces; log redacted type+message only.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => ErrorReporter.Show(null, "Unexpected error", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => ErrorReporter.Log("Fatal unhandled exception", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) => { ErrorReporter.Log("Unobserved task exception", e.Exception); e.SetObserved(); };
         ApplicationConfiguration.Initialize();
         var dir = WalletSettings.DefaultDirectory;
         var settingsPath = Path.Combine(dir, "settings.json");

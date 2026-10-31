@@ -119,6 +119,9 @@ internal sealed class MainForm : Form
         var answer = MessageBox.Show(this, plan.Summary() + "\n\nBroadcast this transaction? This cannot be undone.",
             "Confirm send", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes) { SetStatus("Send cancelled."); return; }
+        if (plan.FoldedChangeSompi > 0 && MessageBox.Show(this, string.Join("\n", plan.Warnings) + "\n\nSend anyway and lose this change to the fee?",
+                "Small change goes to fee", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        { SetStatus("Send cancelled (change would go to fee)."); return; }
         if (plan.Network == WalletNetwork.Mainnet && !MainnetSendWarning.Confirm(this, plan)) { SetStatus("Mainnet send cancelled."); return; }
         var id = await _mgr.BroadcastAsync(plan, userConfirmed: true, cts.Token);
         SetStatus($"Submitted tx {id}");

@@ -25,9 +25,30 @@ public sealed class WalletManager : IAsyncDisposable
     public string KeystorePath => Path.Combine(Directory, $"wallet.{Settings.Network.ToString().ToLowerInvariant()}.json");
     public bool KeystoreExists => File.Exists(KeystorePath);
     public bool IsUnlocked => _account != null;
-    public string? Address => _account?.Address ?? (KeystoreExists ? WalletKeystore.Load(KeystorePath).Address : null);
+    public string? Address => _account?.Address ?? (TryLoadKeystore(out var f, out _) ? f!.Address : null);
 
-    /// <summary>Encrypts and saves; refuses to overwrite an existing keystore.</summary>
+    /// <summary>Never throws: returns false with a user-safe error when the wallet file is missing/corrupt (KDW-05).</summary>
+    public bool TryLoadKeystore(out KeystoreFile? file, out string? error)
+    {
+        file = null; error = null;
+        if (!KeystoreExists) { error = "No wallet file."; return false; }
+        try { file = WalletKeystore.Load(KeystorePath); return true; }
+        catch (KeystoreCorruptException ex) { error = ex.Message; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Cannot read the wallet file: " + ex.GetType().Name; }
+        return false;
+    }
+
+    /// <summary>
+    /// NEW wallet: requires a passed <see cref="BackupChallenge"/> for this exact mnemonic before anything is written (KDW-04).
+    /// </summary>
+    public void CreateNew(string mnemonic, string password, BackupChallenge backup)
+    {
+        if (backup is null || !backup.IsVerified) throw new InvalidOperationException("Recovery phrase backup has not been verified.");
+        if (!backup.Matches(mnemonic)) throw new InvalidOperationException("Backup verification belongs to a different recovery phrase.");
+        CreateOrImport(mnemonic, password);
+    }
+
+    /// <summary>Import (user already owns the phrase), or internal use by <see cref="CreateNew"/>. Refuses to overwrite.</summary>
     public void CreateOrImport(string mnemonic, string password)
     {
         if (KeystoreExists) throw new InvalidOperationException("A wallet already exists for this network. Remove/back up the file first.");
@@ -36,17 +57,27 @@ public sealed class WalletManager : IAsyncDisposable
         WalletKeystore.Save(file, KeystorePath);
     }
 
+    /// <summary>
+    /// Throws only user-presentable exceptions: <see cref="ArgumentException"/> (empty password), <see cref="UnlockThrottledException"/>,
+    /// <see cref="WrongPasswordException"/>, <see cref="KeystoreCorruptException"/>. Failed attempts persist across restarts (KDW-09).
+    /// </summary>
     public void Unlock(string password)
     {
         Lock();
-        var wait = _failedUnlocks > 2 ? TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(5, _failedUnlocks - 2))) : TimeSpan.Zero;
-        if (DateTimeOffset.UtcNow < _lastFailure + wait) throw new InvalidOperationException($"Too many attempts; wait {wait.TotalSeconds:0}s.");
-        try { _account = WalletKeystore.Unlock(WalletKeystore.Load(KeystorePath), NormalizePassword(password, checkStrength: false)); _failedUnlocks = 0; }
-        catch (WrongPasswordException) { _failedUnlocks++; _lastFailure = DateTimeOffset.UtcNow; throw; }
+        var state = UnlockThrottle.Load(ThrottlePath);
+        var remaining = state.Remaining(DateTimeOffset.UtcNow);
+        if (remaining > TimeSpan.Zero) throw new UnlockThrottledException(remaining);
+        var pw = NormalizePassword(password, checkStrength: false);
+        if (!TryLoadKeystore(out var file, out var err)) throw new KeystoreCorruptException(err ?? "unreadable");
+        try
+        {
+            _account = WalletKeystore.Unlock(file!, pw);
+            UnlockThrottle.Reset(ThrottlePath);
+        }
+        catch (WrongPasswordException) { state.RecordFailure(DateTimeOffset.UtcNow); state.Save(ThrottlePath); throw; }
     }
 
-    private int _failedUnlocks;
-    private DateTimeOffset _lastFailure;
+    public string ThrottlePath => Path.Combine(Directory, $"unlock-state.{Settings.Network.ToString().ToLowerInvariant()}.json");
 
     /// <summary>NFKC-normalizes; empty passwords are always forbidden; new passwords need ≥8 chars.</summary>
     public static string NormalizePassword(string password, bool checkStrength = true)
@@ -60,8 +91,8 @@ public sealed class WalletManager : IAsyncDisposable
     /// <summary>Re-encrypts the keystore under a new password (fresh salt/nonce). Old password stops working.</summary>
     public void ChangePassword(string oldPassword, string newPassword)
     {
-        var file = WalletKeystore.Load(KeystorePath);
-        var phrase = WalletKeystore.Decrypt(file, NormalizePassword(oldPassword, false));
+        if (!TryLoadKeystore(out var file, out var err)) throw new KeystoreCorruptException(err ?? "unreadable");
+        var phrase = WalletKeystore.Decrypt(file!, NormalizePassword(oldPassword, false));
         var updated = WalletKeystore.Encrypt(phrase, NormalizePassword(newPassword), Settings.Network, Kdf);
         WalletKeystore.Save(updated, KeystorePath);
     }
@@ -120,14 +151,22 @@ public sealed class WalletManager : IAsyncDisposable
     {
         var coins = await Node.GetCoinsAsync(Account.Address, ct);
         double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
-        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, null, Settings.MassPolicyFor(Settings.Network));
+        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeeCapFor(amountSompi), Settings.MassPolicyFor(Settings.Network));
     }
 
     public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default)
     {
         if (plan.Network == WalletNetwork.Mainnet && !Settings.MainnetEnabled) throw new TransferException("Mainnet is disabled.");
         var st = await Node.GetStatusAsync(ct);
-        var id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct);
+        string id;
+        try { id = await TransferService.BroadcastAsync(Node, plan, userConfirmed, ct); }
+        catch (TransferStatusUnknownException ex)
+        {
+            // Track it anyway so Recheck can resolve Accepted/Dropped.
+            Tracker.Add(ex.TransactionId, plan.To, plan.AmountSompi, plan.FeeSompi, plan.Transaction.Inputs.Select(i => i.PreviousOutpoint), plan.ChangeSompi > 0, st.VirtualDaaScore);
+            try { Tracker.Save(HistoryPath); } catch (IOException e2) { WalletLog.Error("Could not save history", e2); }
+            throw;
+        }
         Tracker.Add(id, plan.To, plan.AmountSompi, plan.FeeSompi, plan.Transaction.Inputs.Select(i => i.PreviousOutpoint), plan.ChangeSompi > 0, st.VirtualDaaScore);
         try { Tracker.Save(HistoryPath); } catch (IOException ex) { WalletLog.Error("Could not save history", ex); }
         WalletLog.Info($"Broadcast tx {id}");

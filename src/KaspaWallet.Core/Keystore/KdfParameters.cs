@@ -8,10 +8,15 @@ public sealed record KdfParameters(int MemoryKiB, int Iterations, int Parallelis
     /// <summary>Fast parameters for unit tests only.</summary>
     public static KdfParameters TestOnly { get; } = new(1024, 1, 1);
 
-    internal void Validate()
+    public const int MaxMemoryKiB = 1024 * 1024; // 1 GiB
+    public const int MaxIterations = 10;
+    public const int MaxParallelism = 16;
+
+    public void Validate()
     {
-        if (MemoryKiB < 1024 || MemoryKiB > 4 * 1024 * 1024) throw new InvalidDataException("Argon2 memory out of range.");
-        if (Iterations < 1 || Iterations > 100) throw new InvalidDataException("Argon2 iterations out of range.");
-        if (Parallelism < 1 || Parallelism > 64) throw new InvalidDataException("Argon2 parallelism out of range.");
+        // Caps also bound the work a tampered file can force before the GCM tag is checked (KDW-08).
+        if (MemoryKiB < 1024 || MemoryKiB > MaxMemoryKiB) throw new KeystoreCorruptException("Argon2 memory out of range.");
+        if (Iterations < 1 || Iterations > MaxIterations) throw new KeystoreCorruptException("Argon2 iterations out of range.");
+        if (Parallelism < 1 || Parallelism > MaxParallelism) throw new KeystoreCorruptException("Argon2 parallelism out of range.");
     }
 }

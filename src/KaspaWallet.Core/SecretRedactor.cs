@@ -31,6 +31,7 @@ public static partial class SecretRedactor
         var s = ExtPrivNamed().Replace(text, Mask);
         s = ExtPriv().Replace(s, Mask);
         s = LongHex().Replace(s, Mask);
+        s = RedactBase64(s);
         return RedactMnemonicRuns(s);
     }
 
@@ -38,17 +39,18 @@ public static partial class SecretRedactor
     {
         var matches = Word().Matches(s);
         var result = new System.Text.StringBuilder(s);
-        int runStart = -1, runCount = 0;
+        int runStart = -1, runCount = 0; var structured = false;
         var spans = new List<(int start, int end)>();
         for (var i = 0; i <= matches.Count; i++)
         {
             var isWord = i < matches.Count && Words.Contains(matches[i].Value.ToLowerInvariant());
             if (isWord && runCount > 0)
             {
-                // must be separated only by whitespace from previous word
+                // separators: whitespace, or list/JSON/numbering punctuation and digits ("1. a, 2. b", ["a","b"], a-b)
                 var prev = matches[i - 1];
                 var gap = s.AsSpan(prev.Index + prev.Length, matches[i].Index - prev.Index - prev.Length);
-                if (!gap.IsWhiteSpace()) { Flush(i); runStart = i; runCount = 1; continue; }
+                if (!IsSeparator(gap)) { Flush(i); runStart = i; runCount = 1; structured = false; continue; }
+                if (!gap.IsWhiteSpace()) structured = true;
             }
             if (isWord) { if (runCount == 0) runStart = i; runCount++; }
             else Flush(i);
@@ -59,14 +61,32 @@ public static partial class SecretRedactor
 
         void Flush(int i)
         {
-            if (runCount >= 12)
+            if (runCount >= (structured ? StructuredThreshold : 12))
             {
                 var first = matches[runStart]; var last = matches[runStart + runCount - 1];
                 spans.Add((first.Index, last.Index + last.Length));
             }
-            runCount = 0; runStart = -1;
+            runCount = 0; runStart = -1; structured = false;
         }
     }
+
+    /// <summary>Runs using list punctuation/numbering are masked from this many words (KDW-10).</summary>
+    public const int StructuredThreshold = 8;
+
+    private static bool IsSeparator(ReadOnlySpan<char> gap)
+    {
+        if (gap.Length == 0 || gap.Length > 8) return false;
+        foreach (var c in gap)
+            if (!(char.IsWhiteSpace(c) || char.IsDigit(c) || ",.-_;:|/\\\"'[](){}".Contains(c))) return false;
+        return true;
+    }
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{43,}={0,2}(?![A-Za-z0-9+/=])", RegexOptions.CultureInvariant)]
+    private static partial Regex Base64Run();
+
+    /// <summary>Masks base64 runs ≥43 chars (32-byte keys) that mix upper and lower case (bech32 addresses are lowercase).</summary>
+    private static string RedactBase64(string s) => Base64Run().Replace(s, m =>
+        m.Value.Any(char.IsUpper) && m.Value.Any(char.IsLower) ? Mask : m.Value);
 
     private static HashSet<string> LoadWords()
     {

@@ -12,6 +12,11 @@ public sealed class WalletSettings
     public string? WrpcUrl { get; set; }
     /// <summary>Per-network mass policy (Toccata before/after). See <see cref="MassPolicy"/>.</summary>
     public Dictionary<WalletNetwork, MassPolicy> MassPolicies { get; set; } = new();
+    /// <summary>Fee cap: max(MaxFeeFloorSompi, amount × MaxFeePercent / 100). Transfers above it are rejected (KDW-11).</summary>
+    public ulong MaxFeeFloorSompi { get; set; } = 1_000_000; // 0.01 KAS
+    public double MaxFeePercent { get; set; } = 1.0;
+    public ulong FeeCapFor(ulong amountSompi) =>
+        Math.Max(MaxFeeFloorSompi, (ulong)Math.Min(ulong.MaxValue / 2, amountSompi * Math.Max(0, MaxFeePercent) / 100.0));
     public int RpcTimeoutSeconds { get; set; } = 15;
     public int ClipboardClearSeconds { get; set; } = 30;
     public int AutoLockMinutes { get; set; } = 5;
@@ -30,7 +35,12 @@ public sealed class WalletSettings
     public static WalletSettings Load(string path)
     {
         if (!File.Exists(path)) return new WalletSettings();
-        return JsonSerializer.Deserialize<WalletSettings>(File.ReadAllText(path), Opts) ?? new WalletSettings();
+        try { return JsonSerializer.Deserialize<WalletSettings>(File.ReadAllText(path), Opts) ?? new WalletSettings(); }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
+        {
+            WalletLog.Warn("settings.json is unreadable; using defaults (testnet-10, mainnet disabled).");
+            return new WalletSettings();
+        }
     }
 
     public void Save(string path)

@@ -74,7 +74,7 @@ public class KeystoreTests
     {
         var ks = WalletKeystore.Encrypt(TestData.AbandonMnemonic, Pw, WalletNetwork.Mainnet, KdfParameters.TestOnly);
         ks.Argon2MemoryKiB = 8;
-        Assert.Throws<InvalidDataException>(() => WalletKeystore.Decrypt(ks, Pw));
+        Assert.Throws<KeystoreCorruptException>(() => WalletKeystore.Decrypt(ks, Pw));
     }
 
     [Fact]

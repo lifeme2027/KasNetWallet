@@ -71,7 +71,9 @@ internal sealed class StartForm : Form
         var probe = new WalletManager(WalletSettings.DefaultDirectory, new WalletSettings { Network = net });
         _unlock.Enabled = probe.KeystoreExists;
         _create.Enabled = _import.Enabled = !probe.KeystoreExists;
-        _info.Text = probe.KeystoreExists ? $"Wallet found: {probe.Address}" : "No wallet for this network yet.";
+        if (!probe.KeystoreExists) _info.Text = "No wallet for this network yet.";
+        else if (probe.TryLoadKeystore(out var f, out var err)) _info.Text = $"Wallet found: {f!.Address}";
+        else _info.Text = "Wallet file problem: " + err + $"\nFile: {probe.KeystorePath}";
     }
 
     private void DoUnlock()
@@ -88,6 +90,10 @@ internal sealed class StartForm : Form
                 Manager = mgr; DialogResult = DialogResult.OK; return;
             }
             catch (WrongPasswordException) { MessageBox.Show(this, "Wrong password.", "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            catch (UnlockThrottledException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            catch (ArgumentException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            catch (KeystoreCorruptException ex) { MessageBox.Show(this, ex.Message, "Unlock", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+            catch (Exception ex) { ErrorReporter.Show(this, "Unlock failed", ex); return; }
             finally { UseWaitCursor = false; dlg.Clear(); }
         }
     }
@@ -97,20 +103,31 @@ internal sealed class StartForm : Form
         WalletManager mgr;
         try { mgr = BuildManager(); } catch (OperationCanceledException) { return; }
         using var form = new MnemonicForm(import);
-        if (form.ShowDialog(this) != DialogResult.OK) return;
+        BackupChallenge? backup = null;
+        while (true)
+        {
+            if (form.ShowDialog(this) != DialogResult.OK) { form.Clear(); return; }
+            if (import) break;
+            // KDW-04: spot-check 3 random words before anything is written to disk.
+            backup = new BackupChallenge(form.Mnemonic, 3);
+            using var verify = new BackupVerifyForm(backup);
+            if (verify.ShowDialog(this) == DialogResult.OK && backup.IsVerified) break;
+        }
         using var pw = new PasswordForm("Set wallet password", confirm: true);
         if (pw.ShowDialog(this) != DialogResult.OK) { form.Clear(); return; }
         try
         {
             UseWaitCursor = true;
-            mgr.CreateOrImport(form.Mnemonic, pw.Password);
+            if (import) mgr.CreateOrImport(form.Mnemonic, pw.Password);
+            else mgr.CreateNew(form.Mnemonic, pw.Password, backup!);
             mgr.Unlock(pw.Password);
             Manager = mgr; DialogResult = DialogResult.OK;
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException or KeystoreCorruptException)
         {
-            MessageBox.Show(this, ex.Message, "Wallet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, SecretRedactor.Redact(ex.Message), "Wallet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+        catch (Exception ex) { ErrorReporter.Show(this, "Could not create the wallet", ex); }
         finally { UseWaitCursor = false; form.Clear(); pw.Clear(); }
     }
 }

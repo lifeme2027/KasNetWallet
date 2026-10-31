@@ -86,3 +86,22 @@ The log goes to the local file `%LOCALAPPDATA%/KaspaDesktopWallet/logs/wallet-YY
 - runs of ≥12 BIP39 words
 
 Exceptions are logged only as type + message, never `ToString()`. There is no telemetry, no crash upload, and no auto-update.
+
+## D16 — MVP-1 tester report fixes (2026-10-31)
+- **KDW-04:** a new wallet is written only after `BackupChallenge` (3 CSPRNG-chosen positions) is verified for the *same* phrase (`WalletManager.CreateNew`). Import skips this, because the user already owns the phrase.
+- **KDW-05:**
+  - `WalletManager.Unlock` throws only user-presentable types: `ArgumentException`, `UnlockThrottledException`, `WrongPasswordException`, `KeystoreCorruptException`.
+  - `WalletKeystore.Load` converts every malformed-content error into `KeystoreCorruptException`.
+  - `Address` and `TryLoadKeystore` never throw.
+  - WinForms has global ThreadException, UnhandledException, and UnobservedTaskException handlers that log a redacted type and message only.
+  - A corrupt settings.json falls back to the defaults (testnet-10, mainnet off).
+- **KDW-09:** the failed-unlock counter persists in `unlock-state.<network>.json` (0600). An unreadable state file fails safe to a short wait. Clock skew is capped to the current delay.
+- **KDW-11:**
+  - Change below NKaspa's minimum change is detected as `FoldedChangeSompi`: when change = 0, it is fee minus max(min relay fee, rate × mass). It is shown as a warning with the amount, and the UI asks a second time.
+  - Fee cap = max(`MaxFeeFloorSompi` = 0.01 KAS, `MaxFeePercent` = 1% × amount). Both are configurable in settings.json, and a fee above the cap is rejected.
+  - Trade-off: with the default cap, a folded change of ~0.1 KAS on small sends is rejected. The user can adjust the amount, send the whole balance, or raise the cap.
+- **KDW-08:** KDF caps from file are m ≤ 1 GiB, t ≤ 10, p ≤ 16, and the file size must be ≤ 64 KiB.
+- **KDW-06:** keystore and unlock-state files are created 0600 on Linux/macOS. Windows inherits the %APPDATA% ACL.
+- **KDW-03 / KDW-02:** `EnableUnsafeBinaryFormatterSerialization=false`, `PathMap` and `Deterministic` are set in Directory.Build.props.
+- **KDW-10:** the redactor also treats `, - . " [ ] ( ) : ; / |`, digits and numbering as separators. These structured runs are masked from 8 words, while plain space runs still need 12. Mixed-case base64 runs of 43 or more characters are masked; bech32 addresses are lowercase, so they stay readable.
+- **Submit timeout:** reported as `TransferStatusUnknownException` ("status unknown, refresh"), and the tx is still tracked.
