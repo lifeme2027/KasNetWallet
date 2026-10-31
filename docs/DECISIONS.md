@@ -242,3 +242,14 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
   - The copied file must pass the N7 type check. If it is unreadable or fails the check, it is not carried over: the app uses defaults, and the legacy copy is kept unchanged. The legacy-folder prompt then reports the problem and refuses to delete (N4/N7), so nothing is lost silently.
   - Wallet files are still copied byte for byte. The wallet and settings formats are unchanged.
 - Tests: `Retest806e349Tests` (11, counting theory cases).
+
+## D29 — Malformed settings never stop start-up; name the broken file; case-insensitive Network (retest 1b584ec)
+
+- **N10.** Every error System.Text.Json raises for a bad settings.json counts as "settings corrupt" (`WalletSettings.IsBadSettings`). This covers duplicate keys (ArgumentException), `Network` values such as 1.5, 99999999999 or 1e400 (FormatException/OverflowException), and wrong types.
+  - `WalletSettings.ParseObject` is the strict parser. It rejects exact duplicate keys up front with a clear "duplicate key" message.
+  - `Load` falls back to defaults with a notice. The legacy prompt reports the problem and refuses to delete. Its catch also covers these errors, so the main window still appears.
+  - Reading the network value uses `TryGetValue`, so an out-of-range number is shown as written and is never thrown.
+  - First run: a bad old settings.json is not carried over (D28/N9). If the copy fails for any reason, `KasNetWallet.migrating` is removed and start-up falls back to the legacy folder. A leftover `.migrating` from an interrupted run is discarded before the next attempt, so a crash loop is no longer possible.
+- **N11.** The merge first validates the new settings.json on its own. If that fails, the message names the new file and its path. If only the merged result fails, the problem came from the old values, and the message names the old file.
+- **N12.** Mainnet detection in the old settings matches the `Network` key case-insensitively (`NETWORK`, `network`), matching how keys are read and merged.
+- The wallet and settings formats are unchanged. Tests: `Retest1b584ecTests`.

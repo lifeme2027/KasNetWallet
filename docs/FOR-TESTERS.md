@@ -4,15 +4,16 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Current build (retest 806e349 fixes N7/N8/N9, D28; NKaspa dea2697, D25):** `KasNetWallet-0.1.0-1b584ec-win-x64.zip`
-  - Built from **commit `1b584ecbdce0214b6ae6c72fd45ace75dee0d583`** in a fresh `git clone` with an empty `git status` (KDW-01).
+- **Current build (retest 506a924 fixes N10/N11/N12, D29; NKaspa dea2697, D25):** `KasNetWallet-0.1.0-506a924-win-x64.zip`
+  - Built from **commit `506a924f63cd7b8ee2081aaddcbf1e8e7fc4e6e6`** in a fresh `git clone` with an empty `git status` (KDW-01).
   - NKaspa: `dea269794937328b1c93a7985ff88b9e9f462a09` (0.1.10-alpha).
   - SDK: 8.0.427.
-  - Build time: 2026-10-31 20:06:56 UTC+8.
-  - **SHA256:** `17f5c7dd8b2f5873f83f76eb97599943c1467ffc8b055bae428ec30c97ced017`, also listed in `SHA256SUMS`.
-- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-1b584ec-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 1b584ec` (InformationalVersion).
+  - Build time: 2026-10-31 20:22:28 UTC+8.
+  - **SHA256:** `31ae88bbbcc8429da43bac8b496a9cf00b8c86c8046c24a07de4a800ac09cfc7`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-506a924-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 506a924` (InformationalVersion).
 - **Older builds kept in place** (not moved; listed in `SHA256SUMS`; test the current build instead):
+  - `KasNetWallet-0.1.0-1b584ec-win-x64.zip` (`17f5c7dd…`, N7–N9 fixes, before N10–N12)
   - `KasNetWallet-0.1.0-806e349-win-x64.zip` (`acf071b1…`, N4–N6 fixes, before N7–N9)
   - `KasNetWallet-0.1.0-89772b3-win-x64.zip` (`bdb53701…`, M1/M2 fixes, before N4–N6)
   - `KasNetWallet-0.1.0-46ffee7-win-x64.zip` (`492e9536…`, NKaspa dea2697 pin, before M1/M2)
