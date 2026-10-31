@@ -72,9 +72,9 @@ public class Round2Tests
     {
         using var acc = Tn();
         var coins = new[] { TestData.FakeCoin(acc.Address, 100_000_000, 7), TestData.FakeCoin(acc.Address, 50_000_000, 9) };
-        var plan = TransferService.Build(acc, coins, TestData.AbandonTestnet, 90_000_000);
+        var plan = TransferService.Build(acc, coins, TestData.AbandonTestnet, 99_000_000); // post-Toccata MinimumChange is 0.02 KAS
         Assert.Equal(0UL, plan.FoldedChangeSompi);
-        Assert.True(plan.ChangeSompi >= 10_000_000, $"change={plan.ChangeSompi}");
+        Assert.True(plan.ChangeSompi >= 2_000_000, $"change={plan.ChangeSompi}");
         Assert.Equal(2, plan.InputCount);
         Assert.Empty(plan.Warnings);
         Assert.Equal(plan.ExpectedFeeSompi, plan.FeeSompi);
@@ -84,9 +84,9 @@ public class Round2Tests
     public void N3_DustFold_NoExtraInput_WarnsAndNeedsAcknowledgement()
     {
         using var acc = Tn();
-        var plan = TransferService.Build(acc, new[] { TestData.FakeCoin(acc.Address, 100_000_000, 7) }, TestData.AbandonTestnet, 90_000_000);
+        var plan = TransferService.Build(acc, new[] { TestData.FakeCoin(acc.Address, 100_000_000, 7) }, TestData.AbandonTestnet, 99_000_000);
         Assert.True(plan.FoldedChangeSompi > 0);
-        Assert.Contains(plan.Warnings, w => w.Contains("Abnormally high fee"));
+        Assert.Contains(plan.Warnings, w => w.Contains("ADDED TO THE FEE")); // 5c49251: fee is no longer "abnormal" by rate, but the fold still needs acknowledgement
         var node = new TransferTests.FakeNode("testnet-10");
         Assert.ThrowsAsync<TransferException>(() => TransferService.BroadcastAsync(node, plan, userConfirmed: true)).GetAwaiter().GetResult();
         Assert.Equal(0, node.Submitted);
@@ -113,7 +113,7 @@ public class Round2Tests
         using var acc = Tn();
         var coins = new[] { TestData.FakeCoin(acc.Address, 50 * Kas.SompiPerKas, 3) };
         var ex = Assert.Throws<TransferException>(() =>
-            TransferService.Build(acc, coins, TestData.AbandonTestnet, 10_000_000, FeeMode.NodeEstimate, nodeFeeRate: 150));
+            TransferService.Build(acc, coins, TestData.AbandonTestnet, 10_000_000, FeeMode.NodeEstimate, nodeFeeRate: 150, massPolicy: new MassPolicy { ToccataActive = false }));
         Assert.Contains("burn", ex.Message);
         Assert.Contains("Send max", ex.Message);
     }

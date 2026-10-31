@@ -6,7 +6,7 @@ Times are Asia/Shanghai (UTC+8).
 ## 1. Build artifact
 - **Current build (retest round 3, R3-1–R3-8):** `KaspaDesktopWallet-0.1.0-cc6337e-win-x64.zip`
   - Built from **commit `cc6337e3e0001aa6f655cb17975364b37643abb4`** in a fresh `git clone` with an empty `git status` (KDW-01).
-  - NKaspa: `f41c86a6d36da37243bcdd41e76662ac6c25b349`.
+  - NKaspa: `5c49251dfc2e1e5396344f802514bc6ee5e828fa`.
   - SDK: 8.0.427.
   - Build time: 2026-10-31 17:04:29 UTC+8.
   - **SHA256:** `e77e9b53707992c4d80e131eefdb18e77871e626382844ac06709601623ebb65`, also listed in `SHA256SUMS`.
@@ -26,7 +26,7 @@ Times are Asia/Shanghai (UTC+8).
 - **Entry point:** `KaspaWallet.WinForms.exe`. DPI mode is PerMonitorV2.
 
 ## 2. NKaspa version
-- **Pinned:** `lifeme2027/NKaspa` commit `f41c86a6d36da37243bcdd41e76662ac6c25b349` (0.1.9-alpha, MIT), referenced as a ProjectReference to a local clone (`../kdw-src/NKaspa`).
+- **Pinned:** `lifeme2027/NKaspa` commit `5c49251dfc2e1e5396344f802514bc6ee5e828fa` (0.1.10-alpha, MIT), referenced as a ProjectReference to a local clone (`../kdw-src/NKaspa`).
 - **Enforced:** `Directory.Build.props` → `VerifyNKaspaPin` **fails the build** if the clone is at another commit or has local modifications.
 - **Unmodified:** the wallet does not modify NKaspa. Gaps are recorded in `docs/NKASPA-REQUESTS.md` (R1–R10) and `docs/patches/`.
 
@@ -164,6 +164,21 @@ Times are Asia/Shanghai (UTC+8).
 - **Unlock state not writable (R3-1):** e.g. a read-only file or folder, or a directory with the same name. After a wrong password the strictest 30 s delay applies to every attempt, and a notice says the counter could not be saved. Note: as root/Administrator a 0400 file is still writable, so use a directory named `unlock-state.testnet10.json` in the wallet folder to test this.
 - **Deleting or corrupting the state file resets the counter (R3-2).** This is intended and documented in DECISIONS D18. Brute-force protection comes from the keystore's Argon2id cost, not from the counter.
 - **State file larger than 4 KB (R3-3):** treated as corrupt and reset, with a notice.
+
+## 11c. NKaspa 5c49251 — behaviour changes to retest
+
+- **Toccata auto-detection:** the mass rules now follow the node's DAA score. On testnet-10 (activated) the fee floor is 100 sompi/gram, the mass cap is the post-Toccata limit and MinimumChange is about 0.02 KAS (previously 0.1 KAS). `"ToccataActive": false` in settings.json forces pre-Toccata rules, which use a **1 sompi/gram** floor, so fees become about 100× lower.
+- **Change between about 0.02 and 0.1 KAS** is now a normal change output on testnet-10. Before, it was "dust folded into the fee".
+- **Small change (below MinimumChange)** is still added to the fee, with a warning that needs acknowledgement.
+- **Large change that cannot fit (NKaspa now refuses to burn it):**
+  - The wallet first tries adding an input.
+  - Otherwise it blocks with "Blocked: the change output does not fit…", or "Amount too small … storage mass" for small amounts.
+- **Mnemonic import:**
+  - Bad checksums are rejected (by both NKaspa and the wallet).
+  - Different case and Unicode compatibility forms are accepted.
+  - Zero-width characters are still rejected by the wallet.
+- **Logs and errors:** `ExtKey.ToString()` and `Mnemonic.ToString()` no longer contain secrets.
+- **wRPC:** frames above 16 MiB are refused. The connect and request timeouts follow `RpcTimeoutSeconds`.
 
 ## 12. UI languages
 English only. The amount format is invariant: always `.`, 8 decimal places, no scientific notation. zh-CN is TBD.

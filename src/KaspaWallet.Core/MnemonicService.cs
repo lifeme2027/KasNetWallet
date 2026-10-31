@@ -8,9 +8,9 @@ public static class MnemonicService
     public static string Generate(int words = 24)
     {
         var count = words switch { 12 => WordCount.Twelve, 24 => WordCount.TwentyFour, _ => throw new ArgumentException("Only 12 or 24 words are supported.", nameof(words)) };
-        // Words are joined explicitly; never call Mnemonic.ToString() (NL-072).
+        // NKaspa 5c49251: ToPhrase() is the explicit raw export; never call Mnemonic.ToString() (NL-072).
         var m = new Mnemonic(Wordlist.English, count);
-        return string.Join(' ', m.Words);
+        return m.ToPhrase();
     }
 
     /// <summary>Normalizes whitespace/case and validates the checksum. Throws FormatException on invalid input.</summary>
@@ -24,11 +24,12 @@ public static class MnemonicService
         for (var i = 0; i < words.Length; i++)
             if (!wl.TryGetIndex(words[i], out _)) throw new FormatException($"Word #{i + 1} is not in the BIP39 English list.");
         var joined = string.Join(' ', words);
-        Mnemonic m;
-        try { m = new Mnemonic(joined, Wordlist.English); }
+        // NKaspa 5c49251 (R1 resolved): Mnemonic.Parse enforces the checksum. Our own word checks above stay as defense in depth
+        // and still REJECT zero-width characters (NKaspa would strip them silently; KW-016).
+        try { _ = Mnemonic.Parse(joined, Wordlist.English); }
+        catch (FormatException ex) when (ex.Message.Contains("checksum", StringComparison.OrdinalIgnoreCase))
+        { throw new FormatException("Invalid mnemonic checksum: one or more words are wrong or out of order."); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { throw new FormatException("Invalid mnemonic (unknown word)."); }
-        // NKaspa's parser records but does not enforce the checksum; enforce it here (DECISIONS.md D2).
-        if (!m.IsValidChecksum) throw new FormatException("Invalid mnemonic checksum: one or more words are wrong or out of order.");
         return joined;
     }
 

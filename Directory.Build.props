@@ -8,7 +8,7 @@
     <!-- Local clone of https://github.com/lifeme2027/NKaspa (read-only; do not modify). Override with -p:NKaspaRoot=... -->
     <NKaspaRoot Condition="'$(NKaspaRoot)' == ''">$(MSBuildThisFileDirectory)..\kdw-src\NKaspa</NKaspaRoot>
     <!-- Pinned NKaspa commit (0.1.9-alpha). Build fails if the clone is at another commit or has local changes. -->
-    <NKaspaPinnedCommit>f41c86a6d36da37243bcdd41e76662ac6c25b349</NKaspaPinnedCommit>
+    <NKaspaPinnedCommit>5c49251dfc2e1e5396344f802514bc6ee5e828fa</NKaspaPinnedCommit>
   </PropertyGroup>
   <Target Name="VerifyNKaspaPin" BeforeTargets="ResolveProjectReferences" Condition="'$(MSBuildProjectName)' == 'KaspaWallet.Core' And '$(SkipNKaspaPinCheck)' != 'true'">
     <Exec Command="git -C &quot;$(NKaspaRoot)&quot; rev-parse HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low">

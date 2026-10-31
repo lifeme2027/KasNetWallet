@@ -33,7 +33,7 @@ public sealed class HdAccount : IDisposable
 
     public static HdAccount FromMnemonic(string mnemonic, WalletNetwork network, string? bip39Passphrase = null)
     {
-        var m = new Mnemonic(MnemonicService.Normalize(mnemonic), Wordlist.English);
+        var m = Mnemonic.Parse(MnemonicService.Normalize(mnemonic), Wordlist.English); // checksum enforced by NKaspa (and by Normalize)
         using var master = m.DeriveExtKey(bip39Passphrase);
         using var receive = master.Derive(KeyPath.KaspaReceive(0));
         return new HdAccount(receive.PrivateKey, network);

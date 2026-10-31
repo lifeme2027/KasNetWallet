@@ -33,9 +33,10 @@ public static class TransferService
     internal const ulong FoldToleranceSompi = 1_000;
     private const int MaxExtraInputTries = 64;
 
-    private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange)
+    private sealed record Built(Transaction Tx, UtxoEntry[] Entries, ulong InSum, ulong Fee, ulong Change, ulong Expected, ulong FeeMass, ulong RelayMass, ulong MinimumChange, ulong NkFolded = 0)
     {
-        public ulong Folded => Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0;
+        /// <summary>Change folded into the fee: NKaspa's own report (5c49251 FoldedChange), or our fee − expected check (defense in depth).</summary>
+        public ulong Folded => Math.Max(NkFolded, Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0);
     }
 
     internal sealed record Ctx(HdAccount Account, Network Net, KaspaAddress Payee, KaspaAddress Own, Coin[] Ordered, FeeMode Mode, ulong Rate, ulong ReferenceRate, MassPolicy Mass);
@@ -50,6 +51,9 @@ public static class TransferService
         $"Amount too small: {Kas.Format(amountSompi)} KAS would create a very small output whose storage mass (KIP-9) exceeds the transaction mass limit " +
         $"({c.Mass.EffectiveCap(c.Net)}). Send at least about {Kas.Format(SmallAmountThreshold(c))} KAS, or combine several small payments into one.";
 
+    /// <summary>NKaspa 5c49251 throws instead of burning change above max(MinimumChange, MaxFoldedChange) / 100× the no-change fee.</summary>
+    private static bool IsFoldCapError(string? err) => err is not null && err.Contains("MaxFoldedChange", StringComparison.Ordinal);
+
     private static Ctx Prepare(HdAccount account, IReadOnlyList<Coin> coins, string to, FeeMode mode, double? nodeFeeRate, MassPolicy? massPolicy)
     {
         var net = account.Network.ToNKaspa();
@@ -62,9 +66,11 @@ public static class TransferService
         // Deterministic input order: sort by txid then index.
         var ordered = coins.OrderBy(c => c.Outpoint.TransactionId.ToString(), StringComparer.Ordinal).ThenBy(c => c.Outpoint.Index).ToArray();
         var estimate = nodeFeeRate is double r && r > 0 && !double.IsNaN(r) ? (ulong)Math.Min(1e12, Math.Ceiling(r)) : 0UL;
-        var rate = mode == FeeMode.NodeEstimate ? Math.Max(FeeRate.MinimumRelaySompiPerGram, estimate) : FeeRate.MinimumRelaySompiPerGram;
-        var reference = Math.Max(FeeRate.MinimumRelaySompiPerGram, estimate);
-        return new Ctx(account, net, payee, own, ordered, mode, rate, reference, massPolicy ?? MassPolicy.DefaultFor(account.Network));
+        var mp = massPolicy ?? MassPolicy.DefaultFor(account.Network);
+        var floor = mp.Resolve(net).MinimumRelayFeeRate; // NKaspa 5c49251: 100 post-Toccata, 1 pre-Toccata
+        var rate = mode == FeeMode.NodeEstimate ? Math.Max(floor, estimate) : floor;
+        var reference = Math.Max(floor, estimate);
+        return new Ctx(account, net, payee, own, ordered, mode, rate, reference, mp);
     }
 
     private static TransactionBuilder NewBuilder(Ctx c, IEnumerable<Coin> coins)
@@ -81,7 +87,7 @@ public static class TransferService
 
     /// <summary>Expected fee for this exact tx under the chosen mode (what NKaspa should charge without folding).</summary>
     private static ulong ExpectedFee(Ctx c, TransactionMass m) =>
-        c.Mode == FeeMode.NodeEstimate ? checked(m.FeeMass * c.Rate) : MassCalculator.MinimumRelayFee(m);
+        c.Mode == FeeMode.NodeEstimate ? checked(m.FeeMass * c.Rate) : checked(MassCalculator.RelayMass(m) * c.Rate);
 
     private static Built Verify(Ctx c, TransactionBuilder b, Transaction tx, ulong amountSompi, bool allowChange)
     {
@@ -109,7 +115,7 @@ public static class TransferService
         var relay = MassCalculator.RelayMass(mass);
         if (Math.Max(relay, mass.FeeMass) > c.Mass.EffectiveCap(c.Net))
             throw new TransferException($"Transaction mass {Math.Max(relay, mass.FeeMass)} exceeds the configured cap {c.Mass.EffectiveCap(c.Net)}. Use fewer inputs: send a smaller amount, or use Send max (it picks the largest UTXOs that fit).");
-        return new Built(tx, entries, inSum, inSum - outSum, change, ExpectedFee(c, mass), mass.FeeMass, relay, b.MinimumChange.Sompi);
+        return new Built(tx, entries, inSum, inSum - outSum, change, ExpectedFee(c, mass), mass.FeeMass, relay, b.MinimumChange.Sompi, b.ChangeFolded ? b.FoldedChange.Sompi : 0);
     }
 
     private static Built? TryBuild(Ctx c, IEnumerable<Coin> pool, ulong amountSompi, Coin[]? mustSpend, out string? error)
@@ -136,11 +142,11 @@ public static class TransferService
         if (amountSompi >= total)
             throw new TransferException($"Amount plus fee exceeds your balance ({Kas.Format(total)} KAS). Use Send max to send everything minus the fee.");
 
-        Built? built;
-        try { built = TryBuild(c, c.Ordered, amountSompi, null, out var err0); if (built is null) throw new TransferException(err0 ?? "unknown error"); }
-        catch (TransferException ex)
+        var built = TryBuild(c, c.Ordered, amountSompi, null, out var err);
+        var changeUnfittable = built is null && IsFoldCapError(err);
+        if (built is null && !changeUnfittable)
         {
-            var err = ex.Message;
+            err ??= "unknown error";
             if (err.Contains("Not enough funds", StringComparison.OrdinalIgnoreCase))
                 throw new TransferException($"Amount plus fee exceeds your balance ({Kas.Format(total)} KAS). Use Send max to send everything minus the fee.");
             if (err.Contains("mass", StringComparison.OrdinalIgnoreCase) && amountSompi < SmallAmountThreshold(c))
@@ -149,10 +155,11 @@ public static class TransferService
         }
 
         var addedInputs = 0;
-        if (built.Folded > 0 && built.Folded < built.MinimumChange)
+        if (built is null || (built.Folded > 0 && built.Folded < built.MinimumChange))
         {
-            // Dust change: try adding one more input so the change becomes a valid output (N3).
-            var selected = built.Tx.Inputs.Select(i => c.Ordered.First(x => x.Outpoint.Equals(i.PreviousOutpoint))).ToArray();
+            // Dust change, or (NKaspa 5c49251) a change output that cannot fit and is too large to fold:
+            // try adding one more input so the change becomes a valid output (N3).
+            var selected = built is null ? Array.Empty<Coin>() : built.Tx.Inputs.Select(i => c.Ordered.First(x => x.Outpoint.Equals(i.PreviousOutpoint))).ToArray();
             var rest = c.Ordered.Where(x => !selected.Contains(x)).OrderBy(x => x.Amount.Sompi).Take(MaxExtraInputTries);
             foreach (var extra in rest)
             {
@@ -160,6 +167,12 @@ public static class TransferService
                 if (alt is not null && alt.Folded == 0) { built = alt; addedInputs = 1; break; }
             }
         }
+        if (built is null && amountSompi < SmallAmountThreshold(c))
+            throw new TransferException(SmallAmountText(c, amountSompi) + " The change output cannot fit either, and folding it into the fee would burn too much KAS; to empty the wallet use Send max.");
+        if (built is null)
+            throw new TransferException(
+                "Blocked: the change output does not fit the mass limit, and folding it into the fee would burn too much KAS " +
+                "(very small payments from large UTXOs create high storage mass). Try a larger amount, or use Send max.");
 
         if (built.Folded >= built.MinimumChange)
         {

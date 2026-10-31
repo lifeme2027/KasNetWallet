@@ -15,7 +15,8 @@ public class SettingsAndMnemonicTests
         var s = new WalletSettings();
         Assert.Equal(WalletNetwork.Testnet10, s.Network);
         Assert.False(s.MainnetEnabled);
-        Assert.False(s.MassPolicyFor(WalletNetwork.Testnet10).ToccataActive);
+        Assert.Null(s.MassPolicyFor(WalletNetwork.Testnet10).ToccataActive); // auto (DAA score)
+        Assert.True(s.MassPolicyFor(WalletNetwork.Testnet10).Resolve(NKaspa.Network.Testnet).ToccataActive); // tn10 activated
     }
 
     [Fact]
@@ -79,7 +80,7 @@ public class RedactionTests
     {
         using var acc = HdAccount.FromMnemonic(TestData.AbandonMnemonic, WalletNetwork.Testnet10);
         var mnemonic = new Mnemonic(TestData.AbandonMnemonic);
-        var xprv = mnemonic.DeriveExtKey().ToString();
+        var xprv = mnemonic.DeriveExtKey().ExportXprv(); // 5c49251: ToString() no longer prints the xprv
         var hex = Convert.ToHexString(new byte[32].Select((_, i) => (byte)(i * 7 + 1)).ToArray());
         var text = $"oops mnemonic={TestData.AbandonMnemonic} key={xprv} raw={hex} addr={acc.Address}";
         var r = SecretRedactor.Redact(text);

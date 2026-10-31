@@ -203,9 +203,9 @@ public class MvpReportFixTests
     public void DustChange_FoldedIntoFee_IsReportedWithAmount()
     {
         using var acc = HdAccount.FromMnemonic(TestData.AbandonMnemonic, WalletNetwork.Testnet10);
-        var plan = TransferService.Build(acc, OneKas(acc.Address), TestData.AbandonTestnet, 90_000_000);
+        var plan = TransferService.Build(acc, OneKas(acc.Address), TestData.AbandonTestnet, 99_000_000);
         Assert.Equal(0UL, plan.ChangeSompi);
-        Assert.True(plan.FoldedChangeSompi > 9_000_000, $"folded={plan.FoldedChangeSompi}");
+        Assert.True(plan.FoldedChangeSompi > 700_000, $"folded={plan.FoldedChangeSompi}");
         Assert.Equal(plan.InputSompi - plan.AmountSompi - plan.FeeSompi + plan.FoldedChangeSompi, plan.FoldedChangeSompi);
         Assert.Contains(plan.Warnings, w => w.Contains("ADDED TO THE FEE"));
         Assert.Contains(Kas.Format(plan.FoldedChangeSompi), plan.Summary());

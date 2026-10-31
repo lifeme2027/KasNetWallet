@@ -41,7 +41,7 @@ Only receive index 0 (`m/44'/111111'/0'/0/0`); change goes back to the same addr
 `WalletNetwork.Testnet10` maps to NKaspa `Network.Testnet` (prefix `kaspatest`, `ktrv/ktub`). Expected node networkId is `testnet-10`.
 
 ## D9 — NKaspa reference mode — DONE
-Core uses a `ProjectReference` to a local read-only clone (default `../kdw-src/NKaspa`, override with `-p:NKaspaRoot=...`). It was verified at NKaspa commit `f41c86a6d36da37243bcdd41e76662ac6c25b349`. The NKaspa source is never modified here.
+Core uses a `ProjectReference` to a local read-only clone (default `../kdw-src/NKaspa`, override with `-p:NKaspaRoot=...`). It was verified at NKaspa commit `5c49251dfc2e1e5396344f802514bc6ee5e828fa`. The NKaspa source is never modified here.
 
 ## D10 — Default network & mainnet gate — DONE
 Default is **testnet-10**. Mainnet needs two things: selecting it plus confirming an "Enable mainnet" risk dialog, which sets `MainnetEnabled=true` in settings.json. Core refuses to connect or broadcast on mainnet without that flag. Every mainnet send then shows a **second** red dialog that requires typing `SEND MAINNET`.
@@ -128,3 +128,25 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
   - 64-hex strings (txids, block hashes) stay visible unless a secret label (private/priv/secret/seed/mnemonic/entropy/key/sk/prv/signing) appears within the 32 characters before them. Hex of 128+ characters is always masked.
   - Base64 and base64url runs are masked only at key sizes (43/44 or 86–88 characters with a digit or mixed case), or when mixed-case and 120+ characters long. Request ids and GUIDs stay visible.
   - Mnemonic detection now also covers whitespace gaps of any width up to 400 characters, HTML lists, numbered lists of 6 or more words, and words joined by "and/then/or/plus/followed by".
+
+## D19. NKaspa 5c49251 adoption (0.1.10-alpha)
+
+- **Pin:** `Directory.Build.props` pins `5c49251dfc2e1e5396344f802514bc6ee5e828fa`. The local clone was fetched and checked out; the NKaspa source is unmodified.
+- **Mass policy:** `MassPolicy.ToccataActive` is now `bool?`. `null` is the new default ("auto"): it uses `Network.MassPolicyAt(virtualDaaScore)`, with the DAA score fetched from the node before every build. Without a DAA score:
+  - testnet uses post-Toccata rules (testnet-10 has activated);
+  - mainnet uses a conservative mix: the pre-Toccata 100,000 mass cap with a 100 sompi/gram relay rate.
+  `true` and `false` force the NKaspa `PostToccata` and `PreToccata` policies. The `MaxTransactionMass` cap still applies on top.
+- **Fee floor:**
+  - The minimum relay rate comes from the policy: 100 sompi/gram post-Toccata, **1** pre-Toccata (NKaspa's value).
+  - The expected fee is RelayMass × rate (Minimum relay mode) or FeeMass × rate (Node estimate mode).
+  - The wallet still independently recomputes the expected fee and checks mass, outputs and signatures (`Verify`).
+- **Change folding:** NKaspa now refuses to burn large change. The wallet:
+  - uses NKaspa's `FoldedChange` together with its own fee − expected check (whichever is larger);
+  - on NKaspa's refusal, first tries adding one input, then blocks with a clear message ("Amount too small … storage mass" for small amounts);
+  - still blocks folds ≥ MinimumChange and needs acknowledgement for smaller ones.
+- **Mnemonics:**
+  - `MnemonicService.Normalize` calls `Mnemonic.Parse`, which enforces the checksum, and keeps its own word-count, word-list and checksum checks.
+  - Zero-width characters are still **rejected**, not stripped. Silently accepting an altered phrase is worse than asking the user to retype it.
+  - `Generate` uses `ToPhrase()`.
+- **wRPC:** `KaspaWebSocketOptions` sets an explicit 16 MiB frame cap and uses the wallet RPC timeout for connect and requests. AutoReconnect stays off: the wallet's own reconnect re-checks the network id after reconnecting.
+- **JSON:** the wallet never serializes NKaspa key types. NKaspa's default serializer now throws on them, which adds a second layer of protection.

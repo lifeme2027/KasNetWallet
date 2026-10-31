@@ -18,9 +18,16 @@ public sealed class WrpcWalletNode : IWalletNode
     /// <summary>For tests: wrap any NKaspa RPC client (e.g. over a canned channel).</summary>
     public static WrpcWalletNode FromClient(IKaspaRpcClient rpc) => new(null, rpc);
 
-    public static async Task<WrpcWalletNode> ConnectAsync(string url, CancellationToken ct = default)
+    /// <summary>Wallet cap on one wRPC frame (NKaspa 5c49251 default is also 16 MiB; set explicitly as a guard).</summary>
+    public const int MaxMessageBytes = 16 * 1024 * 1024;
+
+    public static async Task<WrpcWalletNode> ConnectAsync(string url, CancellationToken ct = default, TimeSpan? timeout = null)
     {
-        var channel = new KaspaWebSocketChannel(new Uri(url));
+        // NKaspa 5c49251 options: frame size cap and timeouts. AutoReconnect stays off: ResilientWalletNode owns
+        // reconnect/failover so that a reconnect is always followed by a network-id re-check.
+        var options = new KaspaWebSocketOptions { MaxMessageBytes = MaxMessageBytes, AutoReconnect = false };
+        if (timeout is TimeSpan t && t > TimeSpan.Zero) { options.ConnectTimeout = t; options.RequestTimeout = t; }
+        var channel = new KaspaWebSocketChannel(new Uri(url), options);
         try
         {
             await channel.ConnectAsync(ct).ConfigureAwait(false);

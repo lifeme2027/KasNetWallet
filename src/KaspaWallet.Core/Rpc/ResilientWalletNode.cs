@@ -30,7 +30,7 @@ public sealed class ResilientWalletNode : IWalletNode
     public List<TimeSpan> Backoffs { get; } = new();
 
     public static ResilientWalletNode ForUrl(string url, TimeSpan timeout) =>
-        new(async ct => await WrpcWalletNode.ConnectAsync(ValidateUrl(url), ct).ConfigureAwait(false), timeout);
+        new(async ct => await WrpcWalletNode.ConnectAsync(ValidateUrl(url), ct, timeout).ConfigureAwait(false), timeout);
 
     /// <summary>Only JSON wRPC over ws/wss is supported; gRPC/Borsh ports are rejected with a clear message.</summary>
     public static string ValidateUrl(string url)

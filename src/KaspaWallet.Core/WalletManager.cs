@@ -186,7 +186,16 @@ public sealed class WalletManager : IAsyncDisposable
     {
         var coins = await Node.GetCoinsAsync(Account.Address, ct);
         double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
-        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeePolicy, Settings.MassPolicyFor(Settings.Network));
+        return TransferService.Build(Account, coins, to, amountSompi, mode, rate, Settings.FeePolicy, await CurrentMassPolicyAsync(ct));
+    }
+
+    /// <summary>Settings mass policy plus the node's virtual DAA score (NKaspa Network.MassPolicyAt picks pre/post-Toccata rules).</summary>
+    private async Task<MassPolicy> CurrentMassPolicyAsync(CancellationToken ct)
+    {
+        ulong? daa = null;
+        try { daa = (await Node.GetStatusAsync(ct)).VirtualDaaScore; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { WalletLog.Warn("DAA score unavailable; using the default mass policy."); }
+        return Settings.MassPolicyFor(Settings.Network).WithDaaScore(daa);
     }
 
     /// <summary>N2: Send max — amount = spendable balance − fee, no change output.</summary>
@@ -194,7 +203,7 @@ public sealed class WalletManager : IAsyncDisposable
     {
         var coins = await Node.GetCoinsAsync(Account.Address, ct);
         double? rate = mode == FeeMode.NodeEstimate ? await Node.GetNormalFeeRateAsync(ct) : null;
-        return TransferService.BuildSendMax(Account, coins, to, mode, rate, Settings.FeePolicy, Settings.MassPolicyFor(Settings.Network));
+        return TransferService.BuildSendMax(Account, coins, to, mode, rate, Settings.FeePolicy, await CurrentMassPolicyAsync(ct));
     }
 
     public async Task<string> BroadcastAsync(TransferPlan plan, bool userConfirmed, CancellationToken ct = default, bool warningsAcknowledged = false)
