@@ -39,6 +39,11 @@ public sealed class ResilientWalletNode : IWalletNode
             throw new ArgumentException("Node URL must be ws:// or wss:// (JSON wRPC).");
         if (u.Port is 16110 or 16210 or 16310)
             throw new ArgumentException("Port looks like gRPC; only JSON wRPC is supported (e.g. 18110 mainnet, 18210 tn10 — check node flags).");
+        // D32: 17110/17210/17310 are rusty-kaspa's default Borsh wRPC ports (KasWallet's kas_conn uses Borsh there).
+        // NKaspa speaks JSON wRPC only, so a JSON request to a Borsh port can never work.
+        if (u.Port is 17110 or 17210 or 17310)
+            throw new ArgumentException($"Port {u.Port} is a Borsh wRPC port; KasNetWallet needs JSON wRPC: use port {u.Port + 1000} " +
+                "(18110 mainnet, 18210 testnet-10) and start kaspad with --rpclisten-json=0.0.0.0:<port>.");
         return u.ToString();
     }
 

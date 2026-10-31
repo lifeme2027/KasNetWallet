@@ -256,4 +256,20 @@ public class MassPolicyTests
             9 * Kas.SompiPerKas, massPolicy: new MassPolicy { ToccataActive = true, MaxTransactionMass = 5000 }));
         Assert.Equal(5000UL, new MassPolicy { ToccataActive = true, MaxTransactionMass = 5000 }.EffectiveCap(Network.Testnet));
     }
+
+    [Theory]
+    [InlineData("ws://eva.kaspa.green:17110", 18110)]
+    [InlineData("ws://127.0.0.1:17210", 18210)]
+    [InlineData("wss://node.example:17310", 18310)]
+    public void D32_BorshPortsRejectedWithJsonHint(string url, int jsonPort)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => ResilientWalletNode.ValidateUrl(url));
+        Assert.Contains("Borsh", ex.Message);
+        Assert.Contains(jsonPort.ToString(), ex.Message);
+    }
+
+    [Theory]
+    [InlineData("ws://eva.kaspa.green:18110")]
+    [InlineData("ws://127.0.0.1:18210")]
+    public void D32_JsonPortsAccepted(string url) => Assert.Equal(new Uri(url).ToString(), ResilientWalletNode.ValidateUrl(url));
 }

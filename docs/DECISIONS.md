@@ -273,3 +273,9 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - Removed from `Directory.Build.props`: `NKaspaRoot`, `NKaspaPinnedCommit` and the `VerifyNKaspaPin` git check (supersedes D9 and the pin in D25). Building no longer needs git or an NKaspa source tree.
 - No `nuget.config` with local sources is used; restore was verified from a fresh, empty `NUGET_PACKAGES` folder (package source recorded as `https://api.nuget.org/v3/index.json`).
 - NKaspa is still unmodified and not vendored. Its LICENSE ships inside the package and must still ship with any binary.
+
+## D32 — Reject Borsh wRPC ports (17110/17210/17310) with a JSON-port hint
+
+- KasWallet (`KasWallet.Core`, `WalletConfig`) builds `ws://{NodeIP}:{NodePort}` (default: a LAN node at port 17110) and passes it to the native `kas_conn.dll`, which uses rusty-kaspa's wRPC client. 17110 is the default **Borsh** wRPC port (mainnet; 17210 testnet-10).
+- NKaspa, and therefore KasNetWallet, speaks **JSON** wRPC only (default ports 18110 mainnet, 18210 testnet-10, enabled with `--rpclisten-json`). Pointing it at a Borsh port failed with unclear InvalidOperationExceptions.
+- `ResilientWalletNode.ValidateUrl` now rejects 17110/17210/17310 before connecting and names the matching JSON port. This does not make an unreachable node reachable: the node must listen for JSON wRPC on a port the PC can reach.
