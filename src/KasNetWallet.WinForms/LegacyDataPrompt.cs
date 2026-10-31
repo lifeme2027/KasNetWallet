@@ -26,7 +26,7 @@ internal static class LegacyDataPrompt
             var done = LegacyData.DeleteLegacy(st, userConfirmed: true);
             MessageBox.Show(done.Keep.Count == 0 ? "The old folder was deleted." : $"Deleted {done.Delete.Count} verified file(s)." + LegacyData.KeptText(done.Keep), "Old wallet copy", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException || WalletSettings.IsBadSettings(ex)) // N10: never stops start-up
         {
             ErrorReporter.Show(null, "Old wallet folder", ex);
         }

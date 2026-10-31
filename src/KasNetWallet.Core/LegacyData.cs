@@ -49,18 +49,23 @@ public static class LegacyData
 
     private static JsonObject? ReadJson(string path)
     {
-        try { return File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path)) as JsonObject : null; }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
+        try { return File.Exists(path) ? WalletSettings.ParseObject(File.ReadAllText(path)) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException || WalletSettings.IsBadSettings(ex)) { return null; } // N10
     }
 
     /// <summary>"mainnet", "testnet10", … for a Network value (string or enum number); null when absent.</summary>
+    /// N10: numbers use TryGetValue (1.5 or 99999999999 are reported as written, never thrown).
     private static string? NetworkText(JsonNode? n) => n is null ? null
-        : n.GetValueKind() == JsonValueKind.Number ? (Enum.IsDefined(typeof(WalletNetwork), n.GetValue<int>()) ? ((WalletNetwork)n.GetValue<int>()).ToString() : n.ToString())
+        : n is JsonValue v && v.GetValueKind() == JsonValueKind.Number
+            ? (v.TryGetValue<int>(out var i) && Enum.IsDefined(typeof(WalletNetwork), i) ? ((WalletNetwork)i).ToString() : v.ToJsonString())
         : n.ToString();
+
+    /// <summary>N12: the value of a key, matched case-insensitively (first match).</summary>
+    private static JsonNode? GetCi(JsonObject? j, string key) => j?.FirstOrDefault(kv => kv.Key.Equals(key, StringComparison.OrdinalIgnoreCase)).Value;
 
     /// <summary>The old settings choose mainnet (string or enum number). Informational only: Network is never imported (N6).</summary>
     internal static bool OldSettingsUseMainnet(string legacyDir) =>
-        string.Equals(NetworkText(ReadJson(Path.Combine(legacyDir, "settings.json"))?["Network"]), nameof(WalletNetwork.Mainnet), StringComparison.OrdinalIgnoreCase);
+        string.Equals(NetworkText(GetCi(ReadJson(Path.Combine(legacyDir, "settings.json")), "Network")), nameof(WalletNetwork.Mainnet), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>N4: why <see cref="MergeSettings"/> would fail right now (shown in the prompt), or null.</summary>
     internal static string? SettingsMergeError(string legacyDir, string newDir)
@@ -119,8 +124,8 @@ public static class LegacyData
         static JsonObject? Strict(string path, string what)
         {
             if (!File.Exists(path)) return null;
-            try { return JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new JsonException("not a JSON object"); }
-            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            try { return WalletSettings.ParseObject(File.ReadAllText(path)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException || WalletSettings.IsBadSettings(ex))
             { throw new InvalidOperationException($"The {what} settings file {path} cannot be read ({ex.Message}). Fix or remove it, then try again.", ex); }
         }
         var oldJ = Strict(Path.Combine(legacyDir, "settings.json"), "old");
@@ -148,7 +153,9 @@ public static class LegacyData
         var have = new HashSet<string>(target.Select(kv => kv.Key), StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in oldJ)
             if (v is not null && !NotImportedKeys.Contains(k, StringComparer.OrdinalIgnoreCase) && have.Add(k)) { target[k] = v.DeepClone(); changed = true; }
-        WalletSettings.ValidateTypes(target, "merged");
+        // N11: name the file that is actually wrong. The new file alone must load; if it does, a failure of the merge comes from the old values.
+        if (newJ is not null) WalletSettings.ValidateTypes(newJ, "new", $"the new settings.json ({Path.Combine(newDir, "settings.json")})");
+        WalletSettings.ValidateTypes(target, "merged", $"the old settings.json ({Path.Combine(legacyDir, "settings.json")})");
         return (target, changed);
     }
 

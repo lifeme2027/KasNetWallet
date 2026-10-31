@@ -45,8 +45,8 @@ public sealed class WalletSettings
         {
             var dir = Path.Combine(AppData, DirectoryName);
             try { MigrateLegacyDirectory(Path.Combine(AppData, LegacyDirectoryName), dir); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {   // N10: a failed first-run copy never crashes start-up; the temp folder is already removed by MigrateLegacyDirectory.
                 WalletLog.Warn($"Could not migrate legacy data folder: {ex.GetType().Name}");
                 // Fall back to the legacy folder so existing wallets stay usable.
                 var legacy = Path.Combine(AppData, LegacyDirectoryName);
@@ -66,10 +66,18 @@ public sealed class WalletSettings
     {
         if (Directory.Exists(newDir) || !Directory.Exists(legacyDir)) return false;
         var tmp = newDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".migrating";
-        if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
-        CopyTree(legacyDir, tmp);
-        SanitizeMigratedSettings(Path.Combine(tmp, "settings.json"));
-        Directory.Move(tmp, newDir);
+        if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true); // N10: a leftover from an interrupted run is discarded
+        try
+        {
+            CopyTree(legacyDir, tmp);
+            SanitizeMigratedSettings(Path.Combine(tmp, "settings.json"));
+            Directory.Move(tmp, newDir);
+        }
+        catch
+        {   // N10: never leave KasNetWallet.migrating behind
+            try { if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            throw;
+        }
         LastMigratedFrom = legacyDir;
         WalletLog.Warn("Migrated data folder from legacy KaspaDesktopWallet location (legacy copy kept).");
         return true;
@@ -83,25 +91,40 @@ public sealed class WalletSettings
         if (!File.Exists(path)) return;
         try
         {
-            var j = JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new JsonException("not a JSON object");
+            var j = ParseObject(File.ReadAllText(path));
             foreach (var k in j.Select(kv => kv.Key).Where(k => LegacyData.NotImportedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)).ToArray()) j.Remove(k);
             ValidateTypes(j, "old");
             File.WriteAllText(path, j.ToJsonString(Opts));
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (Exception ex) when (IsBadSettings(ex))
         {
             File.Delete(path);
             WalletLog.Warn("Legacy settings.json was not migrated (unreadable or wrong value types); defaults are used and the legacy copy is kept.");
         }
     }
 
+    /// <summary>N10: every exception System.Text.Json can raise for malformed settings (duplicate keys → ArgumentException,
+    /// Network 1.5 / 99999999999 → FormatException/OverflowException, wrong types → JsonException/InvalidOperationException).</summary>
+    public static bool IsBadSettings(Exception ex) =>
+        ex is JsonException or ArgumentException or FormatException or OverflowException or InvalidOperationException or NotSupportedException;
+
+    /// <summary>N10: strict parse of a settings file: must be one JSON object without duplicate key names (exact match; System.Text.Json
+    /// would otherwise throw ArgumentException later, on first access). Throws JsonException.</summary>
+    internal static JsonObject ParseObject(string text)
+    {
+        var j = JsonNode.Parse(text) as JsonObject ?? throw new JsonException("not a JSON object");
+        try { _ = j.Count; foreach (var kv in j) { } }
+        catch (ArgumentException ex) { throw new JsonException("duplicate key: " + ex.Message, ex); }
+        return j;
+    }
+
     /// <summary>N7: the settings object must deserialize with the same options as <see cref="Load"/> (value types, nested objects).
     /// Throws InvalidOperationException naming the problem. Range checks stay in <see cref="Normalize"/>.</summary>
-    internal static void ValidateTypes(JsonObject settings, string what)
+    internal static void ValidateTypes(JsonObject settings, string what, string? fileToFix = null)
     {
         try { _ = settings.Deserialize<WalletSettings>(Opts); }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException or FormatException)
-        { throw new InvalidOperationException($"The {what} settings would not load: {ex.Message} Fix or remove the old settings.json, then try again.", ex); }
+        catch (Exception ex) when (IsBadSettings(ex))
+        { throw new InvalidOperationException($"The {what} settings would not load: {ex.Message} Fix or remove {fileToFix ?? $"the {what} settings.json"}, then try again.", ex); }
     }
 
     /// <summary>G1: set when <see cref="MigrateLegacyDirectory"/> copied the legacy folder in this process (UI shows a notice).</summary>
@@ -136,7 +159,7 @@ public sealed class WalletSettings
         if (!File.Exists(path)) return new WalletSettings();
         WalletSettings s;
         try { s = JsonSerializer.Deserialize<WalletSettings>(File.ReadAllText(path), Opts) ?? new WalletSettings(); }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException or IOException)
+        catch (Exception ex) when (IsBadSettings(ex) || ex is IOException or UnauthorizedAccessException)
         {
             WalletLog.Warn("settings.json is unreadable; using defaults (testnet-10, mainnet disabled).");
             notices = new[] { "settings.json was unreadable; defaults are used (testnet-10, mainnet disabled)." };
