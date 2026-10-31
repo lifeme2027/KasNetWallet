@@ -128,7 +128,8 @@ internal sealed class MainForm : Form
                 var text = cb.Message + "\n\n" +
                     (cb.SuggestedAmountSompi is ulong s ? $"Yes = send {Kas.Format(s)} KAS instead\n" : "") +
                     (cb.SuggestedAmountSompi is null ? "OK" : "No") + " = add the remainder to the payment (recipient gets it, no change)\nCancel = edit the amount yourself (or use Send max)";
-                var r = MessageBox.Show(this, text, "Change cannot be sent", cb.SuggestedAmountSompi is null ? MessageBoxButtons.OKCancel : MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button3);
+                var r = MessageBox.Show(this, text, "Change cannot be sent", cb.SuggestedAmountSompi is null ? MessageBoxButtons.OKCancel : MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning,
+                    ChangeBlockedDialog.DefaultButton(cb.SuggestedAmountSompi is not null));
                 if (r == DialogResult.Yes && cb.SuggestedAmountSompi is ulong lower)
                 { _amount.Text = Kas.Format(lower); plan = await _mgr.PrepareTransferAsync(_to.Text, lower, (FeeMode)_fee.SelectedItem!, cts.Token); }
                 else if (r == DialogResult.No || (r == DialogResult.OK && cb.SuggestedAmountSompi is null))

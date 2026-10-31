@@ -54,4 +54,3 @@ dotnet run --project src/KasNetWallet.WinForms    # Windows only
 ## Third-party notices
 - NKaspa: MIT, © NKaspa contributors (project reference, not vendored).
 - Konscious.Security.Cryptography.Argon2: MIT (NuGet).
-- plenteum-wallet-winforms: **no license, not used as code.** It served only as a reference for layout and flow. See docs/DECISIONS.md D1.

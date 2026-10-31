@@ -221,3 +221,22 @@ The old `MaxFeeFloorSompi`/`MaxFeePercent` keys are ignored.
    - Moving the amount gradually should never alternate between fold and block.
 3. **G3:** switching to another node that is a few hundred DAA behind should not block. Being more than 600 behind the highest DAA seen on the same node blocks.
 4. **G5:** mark files in the old folder read-only, then migrate. Wrong-password attempts (unlock-state) must still save.
+
+
+## 11f. Retest da66c4d fixes
+
+1. **S5:** the new folder has tn10 wallet B and the old folder has tn10 A + mainnet.
+   - The prompt lists both and warns about the same-name DIFFERENT wallet.
+   - After Import, A sits next to B as `wallet.testnet10.legacy-xxxxxxxx.json`, and B is unchanged.
+   - Deleting the old folder before importing is refused with a message naming the file.
+2. **S6:** the old folder holds only tn10 A and the new one holds a different tn10 B. You are prompted to import.
+3. **NodeEstimate (post-Toccata, tn10 rate ≈102):**
+   - No "Fee estimate did not converge".
+   - Order is fold → block → change, the same as default mode.
+   - Every block offers a lower amount that builds.
+   - The fee for ~0.12 KAS change is ≈0.002 KAS (it was 0.084).
+4. **Blocked dialog:** pressing Enter is Cancel in both forms (Yes/No/Cancel and OK/Cancel). *Windows check.*
+5. **Follow-ups**
+   - Declining the delete brings one reminder on the next start (marked "Reminder"), then nothing.
+   - Import brings `settings.json` (e.g. RpcTimeout=42).
+   - If the old and new folders are the same folder, delete and import are refused.

@@ -24,6 +24,8 @@ public sealed class ChangeBlockedException : TransferException
     { SuggestedAmountSompi = suggestedAmountSompi; Inputs = inputs; FoldedSompi = folded; }
     /// <summary>A lower amount that was verified to build with a normal change output, or null if none was found.</summary>
     public ulong? SuggestedAmountSompi { get; }
+    /// <summary>1-based position of Cancel in the UI dialog: Yes/No/Cancel with a suggestion, OK(absorb)/Cancel without. Cancel is the default button.</summary>
+    public static int CancelButtonNumber(bool hasSuggestion) => hasSuggestion ? 3 : 2;
     /// <summary>Inputs of the blocked attempt; "add remainder to payment" spends exactly these with no change.</summary>
     public IReadOnlyList<OutPoint> Inputs { get; }
     public ulong? FoldedSompi { get; }
@@ -129,13 +131,14 @@ public static class TransferService
 
     private static void ApplyFeeMode(Ctx c, TransactionBuilder b)
     {
-        if (c.Mode == FeeMode.NodeEstimate) b.SendEstimatedFees(new FeeRate(c.Rate));
-        else b.SendMinimumRelayFee();
+        // N-G2: NodeEstimate uses the same relay-mass fee rule as MinimumRelay, only at the node's (higher) rate. Charging the
+        // estimate on full fee mass (storage mass included) made change < ~0.2 KAS unbuildable and non-monotonic.
+        if (c.Mode == FeeMode.NodeEstimate) b.MinimumRelayFeeRate = c.Rate;
+        b.SendMinimumRelayFee();
     }
 
     /// <summary>Expected fee for this exact tx under the chosen mode (what NKaspa should charge without folding).</summary>
-    private static ulong ExpectedFee(Ctx c, TransactionMass m) =>
-        c.Mode == FeeMode.NodeEstimate ? checked(m.FeeMass * c.Rate) : checked(MassCalculator.RelayMass(m) * c.Rate);
+    private static ulong ExpectedFee(Ctx c, TransactionMass m) => checked(MassCalculator.RelayMass(m) * c.Rate);
 
     private static Built Verify(Ctx c, TransactionBuilder b, Transaction tx, ulong amountSompi, bool allowChange)
     {
@@ -320,7 +323,7 @@ public static class TransferService
         var relRatio = amountSompi == 0 ? double.PositiveInfinity : (double)b.Fee / amountSompi;
         if (relRatio >= policy.AbnormalFeeToAmountRatio)
             warnings.Add($"Abnormally high fee relative to the amount: fee {Kas.Format(b.Fee)} KAS is {relRatio * 100:0}% of the {Kas.Format(amountSompi)} KAS sent." +
-                (storageDriven ? " Cause: storage mass (KIP-9) — small outputs are very heavy, and at fee rates above the 100 sompi/gram minimum storage mass is paid in full. Send a larger amount, combine payments, or use the Minimum relay fee mode." : ""));
+                (storageDriven ? " Cause: storage mass (KIP-9) — small outputs are very heavy. Send a larger amount or combine payments." : ""));
         else if (effRate > rateLimit)
             warnings.Add($"Abnormally high fee: {Kas.Format(b.Fee)} KAS = {effRate:0} sompi/gram, more than {policy.RateMultiplier:0.#}× the reference rate ({c.ReferenceRate} sompi/gram).");
         var abs = policy.AbsoluteWarnThreshold(amountSompi);

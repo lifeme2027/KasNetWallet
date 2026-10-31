@@ -112,10 +112,15 @@ public class Round2Tests
     {
         using var acc = Tn();
         var coins = new[] { TestData.FakeCoin(acc.Address, 50 * Kas.SompiPerKas, 3) };
-        var ex = Assert.Throws<TransferException>(() =>
-            TransferService.Build(acc, coins, TestData.AbandonTestnet, 10_000_000, FeeMode.NodeEstimate, nodeFeeRate: 150, massPolicy: new MassPolicy { ToccataActive = false }));
-        Assert.Contains("burn", ex.Message);
-        Assert.Contains("Send max", ex.Message);
+        // da66c4d N-G2: with the relay-mass fee rule this case now builds with normal change; nothing is burned.
+        var p = TransferService.Build(acc, coins, TestData.AbandonTestnet, 10_000_000, FeeMode.NodeEstimate, nodeFeeRate: 150, massPolicy: new MassPolicy { ToccataActive = false });
+        Assert.Equal(0UL, p.FoldedChangeSompi);
+        Assert.True(p.ChangeSompi > 0);
+        Assert.Equal(50 * Kas.SompiPerKas, p.AmountSompi + p.FeeSompi + p.ChangeSompi);
+        // the block text itself still names "burn" and "Send max"
+        var txt = TransferService.ChangeBlockedText(1_980_000, null, true);
+        Assert.Contains("burn", txt);
+        Assert.Contains("Send max", txt);
     }
 
     [Fact]

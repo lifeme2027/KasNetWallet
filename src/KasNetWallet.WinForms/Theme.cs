@@ -1,6 +1,6 @@
 namespace KasNetWallet.WinForms;
 
-/// <summary>Dark theme. Clean-room; layout inspired by (not copied from) plenteum-wallet-winforms. See docs/DECISIONS.md D1.</summary>
+/// <summary>Dark theme. Original code.</summary>
 internal static class Theme
 {
     public static readonly Color Back = Color.FromArgb(24, 26, 27);

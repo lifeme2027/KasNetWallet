@@ -13,14 +13,15 @@ public class Round3Tests
 
     // ---------- R3-5 ----------
     [Fact]
-    public void R3_5_FeeJumpAt101_IsStorageMass_AndWarnsAbnormal()
+    public void R3_5_NoFeeJumpAt101_NodeEstimateMatchesRelayRule()
     {
         using var acc = Tn();
         var coins = new[] { TestData.FakeCoin(acc.Address, Kas.SompiPerKas, 3) };
         var p100 = TransferService.Build(acc, coins, TestData.AbandonTestnet, 13_000_000, FeeMode.MinimumRelay);
         var p101 = TransferService.Build(acc, coins, TestData.AbandonTestnet, 13_000_000, FeeMode.NodeEstimate, nodeFeeRate: 101);
-        Assert.True(p101.FeeSompi > p100.FeeSompi * 5, $"{p100.FeeSompi} -> {p101.FeeSompi}");
-        Assert.Contains(p101.Warnings, w => w.Contains("Abnormally high") && w.Contains("storage mass"));
+        // da66c4d N-G2: NodeEstimate now applies the rate to relay mass like MinimumRelay, so 100 → 101 no longer jumps.
+        Assert.True(p101.FeeSompi <= p100.FeeSompi * 102 / 100, $"{p100.FeeSompi} -> {p101.FeeSompi}");
+        Assert.DoesNotContain(p101.Warnings, w => w.Contains("Abnormally"));
         Assert.DoesNotContain(p100.Warnings, w => w.Contains("Abnormally"));
     }
 

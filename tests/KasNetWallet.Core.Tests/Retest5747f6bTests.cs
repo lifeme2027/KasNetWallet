@@ -28,12 +28,14 @@ public class Retest5747f6bTests
             File.WriteAllText(Path.Combine(nu, "wallet.mainnet.json"), "NEW");
             var st = LegacyData.Inspect(legacy, nu, migratedThisRun: false);
             Assert.True(st.HasImportable);
-            Assert.Equal(new[] { "wallet.testnet10.json" }, st.ImportableWallets);
+            // da66c4d S5: compared by content — the different mainnet wallet is importable too (under a new name)
+            Assert.Equal(new[] { "wallet.mainnet.json", "wallet.testnet10.json" }, st.ImportableWallets);
             Assert.Contains("does not show", LegacyData.NoticeText(st));
             LegacyData.Import(st);
             Assert.Equal("T", File.ReadAllText(Path.Combine(nu, "wallet.testnet10.json")));
             Assert.Equal("U", File.ReadAllText(Path.Combine(nu, "unlock-state.testnet10.json")));
             Assert.Equal("NEW", File.ReadAllText(Path.Combine(nu, "wallet.mainnet.json")));
+            Assert.Single(Directory.GetFiles(nu, "wallet.mainnet.legacy-*.json"));
             Assert.False(LegacyData.Inspect(legacy, nu, false).HasImportable);
         }
         finally { Directory.Delete(root, true); }

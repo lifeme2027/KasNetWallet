@@ -2,19 +2,9 @@
 
 Status legend: **OPEN** = needs owner confirmation; **DONE** = decided for the MVP, revisit if needed.
 
-## D1 — UI base: plenteum-wallet-winforms license — RESOLVED
-- https://github.com/plenteum/plenteum-wallet-winforms (commit 79881068, archived) has **no LICENSE file**. Its upstream, turtlecoin/turtle-wallet-winforms, returns 404.
-- History: the first policy was a clean-room rewrite with no copying. On 2026-10-31 the user allowed copying, with attribution required.
-- **jun 2026-10-31 decision: no author permission needed** (resolved 16:22 UTC+8).
-- Rules that still apply to any copied/derived file:
-  - it carries the header `Derived from plenteum/plenteum-wallet-winforms`
-  - it is listed in NOTICE and below
-  - all Plenteum/TurtleCoin logic and branding is stripped
-- **Copied/derived files: none so far.** All of `src/KasNetWallet.WinForms` is original code. The repo was used as a layout/flow reference only.
-
-### License pending: needs author permission or rewrite before any public release
-(Superseded by the user decision above. Kept as the required list of copied/derived files.)
-- (none)
+## D1 — UI code origin — RESOLVED
+- All UI code in `src/KasNetWallet.WinForms` is original code written for this project. No third-party wallet UI code was copied or adapted, and no such project is a dependency, so none is listed in NOTICE.
+- Any future copied or derived file must carry a header naming its source and must be listed in NOTICE and here.
 
 ## D2 — BIP39 checksum enforcement — DONE (wrapper) / upstream request
 NKaspa's `Mnemonic(string)` constructor accepts a phrase with a bad checksum and only sets `IsValidChecksum`. Core's `MnemonicService.Normalize` rejects it. Upstream request + patch: docs/NKASPA-REQUESTS.md, docs/patches/0001-*.diff.
@@ -179,3 +169,22 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **G5 read-only files.** Migration and import copy through `CopyWritable`. It clears ReadOnly; on Unix it adds user read/write, so the throttle and history files can still be written.
 - **G4** is not changed (per instruction).
 - Tests: `Retest5747f6bTests` (8 tests). Earlier tests now use `ThrowsAny<TransferException>`, because block is now the subclass `ChangeBlockedException`. The F4 regression test now uses tolerance + 1.
+
+## D23 — Retest da66c4d fixes (S5, S6, N-G2, D-btn, S7 and follow-ups, docs)
+
+- **S5: compare by content.** Wallets are compared by SHA-256 of their content, not by file name.
+  - `DeleteLegacy` refuses unless every old `wallet.*.json` has a byte-identical copy (under any name) in the new folder. The error names the missing file(s).
+  - Import never overwrites. A same-name wallet with different content is imported as `wallet.<net>.legacy-<sha8>.json`, and the user is told how to switch to it by renaming. History and unlock-state are copied only when the wallet keeps its name.
+- **S6.** The "old folder found" prompt appears whenever an old wallet has no identical copy in the new folder, including when tn10 is the only wallet.
+- **N-G2: NodeEstimate fixed, not just a warning.** NodeEstimate now uses the same fee rule as MinimumRelay: relay mass × rate, applied through NKaspa's `MinimumRelayFeeRate` + `SendMinimumRelayFee`. The only difference is the higher node rate. Previously it was fee mass × rate, with storage mass included.
+  - Expected fee is relay mass × rate in both modes. So fold = actual − expected, the monotonic fold → block → change order, and the verified suggested amount all carry over.
+  - The node accepts this because its relay rule charges compute/transient mass. Storage mass is still capped by the mass limit, which the wallet checks.
+  - Effect: "Fee estimate did not converge" no longer occurs. The ~0.2 KAS blocked band shrinks to the same narrow band as default mode, and fees for small change are no longer inflated.
+  - Tests R3-5 and N4, which pinned the old storage-mass fee jump, were updated to the new behaviour.
+- **D-btn.** Cancel is the default (Enter) button in both dialog forms: Yes/No/Cancel → Button3, OK/Cancel → Button2 (`ChangeBlockedException.CancelButtonNumber`).
+- **Follow-ups**
+  - **Delete reminder.** A declined delete is recorded in `legacy-reminder.json` in the new folder. The offer is repeated once on a later start and then never again (`MaxDeleteOffers` = 2). This is not part of the wallet file format.
+  - **Settings.** Import brings `settings.json`. It is copied if the new folder has none; otherwise each old value (e.g. `RpcTimeoutSeconds`) is taken only where the new value is still the default.
+  - **S7.** `DeleteLegacy` and `Import` refuse when the old and new paths resolve to the same folder.
+- **Docs.** Claims about a third-party wallet UI origin were removed from NOTICE, README, Theme.cs and D1. No such file was ever copied, and that project is not a dependency. NOTICE now has the correct NKaspa pin, 5c49251.
+- Tests: `RetestDa66c4dTests` (17 tests, counting theory cases).

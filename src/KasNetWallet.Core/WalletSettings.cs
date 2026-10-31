@@ -25,6 +25,7 @@ public sealed class WalletSettings
     public string EffectiveWrpcUrl => string.IsNullOrWhiteSpace(WrpcUrl) ? Network.DefaultWrpcUrl() : WrpcUrl!;
 
     private static readonly JsonSerializerOptions Opts = new() { WriteIndented = true, Converters = { new TolerantNetworkConverter() } };
+    internal static JsonSerializerOptions JsonOptions => Opts;
 
     /// <summary>Current product data folder name (D20: renamed from KaspaDesktopWallet).</summary>
     public const string DirectoryName = "KasNetWallet";
