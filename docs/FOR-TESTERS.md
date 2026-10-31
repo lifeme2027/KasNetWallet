@@ -4,15 +4,22 @@ Answers to section 5 of `testcases/kaspa-desktop-wallet.md`. They are based on t
 Times are Asia/Shanghai (UTC+8).
 
 ## 1. Build artifact
-- **Current build (rename to KasNetWallet + retest fixes F1–F5, see §11d):** `KasNetWallet-0.1.0-5747f6b-win-x64.zip`
-  - Built from **commit `5747f6ba8cf3df85f6367c0bfd7f80163e6704fa`** in a fresh `git clone` with an empty `git status` (KDW-01).
+- **Current build (retest da66c4d fixes, see §11f; earlier rounds §11d/§11e):** `KasNetWallet-0.1.0-570d403-win-x64.zip`
+  - Built from **commit `570d403d5a715b51184928c61db48823b655a9ed`** in a fresh `git clone` with an empty `git status` (KDW-01).
   - NKaspa: `5c49251dfc2e1e5396344f802514bc6ee5e828fa`.
   - SDK: 8.0.427.
-  - Build time: 2026-10-31 18:28:08 UTC+8.
-  - **SHA256:** `601721bd91857456f26268e2db3903e7c5706184237b80dbcdc41fa02333dc86`, also listed in `SHA256SUMS`.
-- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-5747f6b-win-x64.BUILD-INFO.txt` next to the zip.
-- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 5747f6b` (InformationalVersion).
-- **Superseded:** `KaspaDesktopWallet-0.1.0-0c7e556-win-x64.zip` (`066ace85…`, NKaspa 5c49251 adoption, pre-rename), `…-cc6337e-win-x64.zip` (`e77e9b53…`, round 3, NKaspa f41c86a), `…-f31dc83-win-x64.zip` (`42180cc6…`, round 2), `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes) and the old zip `93158c3a…` was built from a dirty tree (1fc4fb7 + uncommitted changes). It was moved to `kdw-artifacts/superseded/`; do not test it.
+  - Build time: 2026-10-31 19:11:05 UTC+8.
+  - **SHA256:** `38bf820adb56c124ee22dd781af35623fb4576bd4ab83eb5d22cc02e918c9c3e`, also listed in `SHA256SUMS`.
+- **BUILD-INFO:** `BUILD-INFO.txt` is inside the zip (commit, NKaspa pin, SDK, build time, per-file sha256). The same content plus the zip sha256 is in `KasNetWallet-0.1.0-570d403-win-x64.BUILD-INFO.txt` next to the zip.
+- **Check the commit:** `strings -el KasNetWallet.Core.dll | grep 570d403` (InformationalVersion).
+- **Superseded** (all in `kdw-artifacts/superseded/`; do not test them):
+  - `KasNetWallet-0.1.0-da66c4d-win-x64.zip` (`c284661b…`, retest 5747f6b fixes)
+  - `KasNetWallet-0.1.0-5747f6b-win-x64.zip` (`601721bd…`, F1–F5)
+  - `KaspaDesktopWallet-0.1.0-0c7e556-win-x64.zip` (`066ace85…`, NKaspa 5c49251 adoption, pre-rename)
+  - `…-cc6337e-win-x64.zip` (`e77e9b53…`, round 3, NKaspa f41c86a)
+  - `…-f31dc83-win-x64.zip` (`42180cc6…`, round 2)
+  - `…-d8e460c-win-x64.zip` (`f09c8ac7…`, MVP-1 fixes)
+  - the old zip `93158c3a…`, which was built from a dirty tree (1fc4fb7 + uncommitted changes)
 - **Form:** portable zip with no installer. Contents:
   - the publish output of `dotnet publish src/KasNetWallet.WinForms -c Release -r win-x64 --self-contained false`
   - NOTICE
