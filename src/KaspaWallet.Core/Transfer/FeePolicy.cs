@@ -10,6 +10,8 @@ public sealed class FeePolicy
     public double RateMultiplier { get; set; } = 10;
     public ulong WarnFloorSompi { get; set; } = 1_000_000; // 0.01 KAS
     public double WarnPercent { get; set; } = 1.0;
+    /// <summary>R3-5: fee ≥ this fraction of the sent amount is "Abnormally high" (default 0.5 = fee is half the amount or more).</summary>
+    public double AbnormalFeeToAmountRatio { get; set; } = 0.5;
 
     public static FeePolicy Default => new();
 

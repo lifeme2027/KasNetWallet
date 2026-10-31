@@ -24,7 +24,7 @@ public sealed class WalletSettings
 
     public string EffectiveWrpcUrl => string.IsNullOrWhiteSpace(WrpcUrl) ? Network.DefaultWrpcUrl() : WrpcUrl!;
 
-    private static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Opts = new() { WriteIndented = true, Converters = { new TolerantNetworkConverter() } };
 
     public static string DefaultDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KaspaDesktopWallet");
@@ -71,6 +71,7 @@ public sealed class WalletSettings
         MassPolicies ??= new();
         foreach (var (net, mp) in MassPolicies.ToArray())
         {
+            if (!Enum.IsDefined(net)) { MassPolicies.Remove(net); notes.Add("MassPolicies contains an unknown network; entry removed."); continue; }
             if (mp is null) { MassPolicies.Remove(net); notes.Add($"MassPolicies[{net}] was null; removed."); continue; }
             if (mp.MaxTransactionMass is ulong m && (m < 5_000 || m > 1_000_000))
             { mp.MaxTransactionMass = null; notes.Add($"MassPolicies[{net}].MaxTransactionMass={m} is outside 5000..1000000; reset."); }

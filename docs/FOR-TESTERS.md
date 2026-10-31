@@ -152,6 +152,19 @@ Times are Asia/Shanghai (UTC+8).
 - `unlock-state.<net>.json` unreadable/corrupt → reset to 0 failures, file deleted, info dialog "…was unreadable and has been reset".
 - Last-failure time in the future (clock change/tampering) → clamped to now and re-saved, info dialog; no permanent lock. Negative/huge failure counts are clamped to 0–1000.
 
+## 11b. Round 3 (retest-2) behaviour
+
+- **Fee 100 vs 101 sompi/gram (R3-5):**
+  - *Minimum relay* mode charges compute mass only.
+  - *Node estimate* mode charges rate × (compute + storage mass). For small amounts, storage mass dominates.
+  - A fee ≥ 50 % of the amount shows "Abnormally high fee relative to the amount", which must be acknowledged.
+  - Example: 0.13 KAS from a 1 KAS UTXO.
+- **Send max with too many UTXOs (R3-7):** the wallet uses as many of the largest UTXOs as exactly fit the mass limit. A warning then says "Only N of M UTXOs fit … X KAS will STAY". To consolidate, Send max to your own address until 1 UTXO is left.
+- **Very small amounts (R3-4):** "Amount too small … storage mass (KIP-9)". At the 100,000 mass cap the practical minimum is about 0.1–0.2 KAS.
+- **Unlock state not writable (R3-1):** e.g. a read-only file or folder, or a directory with the same name. After a wrong password the strictest 30 s delay applies to every attempt, and a notice says the counter could not be saved. Note: as root/Administrator a 0400 file is still writable, so use a directory named `unlock-state.json` to test this.
+- **Deleting or corrupting the state file resets the counter (R3-2).** This is intended and documented in DECISIONS D18. Brute-force protection comes from the keystore's Argon2id cost, not from the counter.
+- **State file larger than 4 KB (R3-3):** treated as corrupt and reset, with a notice.
+
 ## 12. UI languages
 English only. The amount format is invariant: always `.`, 8 decimal places, no scientific notation. zh-CN is TBD.
 
@@ -163,7 +176,11 @@ Out-of-range values in settings.json are reset to the default on start and liste
 RpcTimeoutSeconds 1–300 · ClipboardClearSeconds 5–600 · AutoLockMinutes 1–1440 · ConfirmationDepthDaa 1–1000000 · Network must be a known value · WrpcUrl must be ws:// or wss:// · MassPolicies[*].MaxTransactionMass 5000–1000000 · FeePolicy as in §11.
 The old `MaxFeeFloorSompi`/`MaxFeePercent` keys are ignored.
 
-## 15. Error messages and redaction (N5, N7)
+## 15. Error messages and redaction (N5, N7, R3-6, R3-8)
+
+- **Settings:** `"Network": "testnet10"`, `"Mainnet"` or `1` are all accepted. An unknown value (e.g. `"Testnet11"`) resets only `Network`, with a notice.
+- **Redaction:** txids and other 64-hex values stay visible in logs and errors unless labelled as a key or seed. Request ids and GUIDs stay visible. Mnemonics are masked in these forms: wide spacing, `<li>` lists, numbered lists of 6 or more words, and "and/then"-joined words. Lowercase base64url keys (43 chars) are masked.
+
 - Nested errors are no longer duplicated ("corrupted or unsupported … Restore it from backup" appears once).
 - The redactor also masks base64url values (`-`/`_`, ≥43 chars, mixed case) and mnemonic word runs separated by wide gaps (up to 48 separator characters: spaces, tabs, newlines, `|`, bullets, numbering).
 

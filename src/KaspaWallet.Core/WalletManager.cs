@@ -51,6 +51,9 @@ public sealed class WalletManager : IAsyncDisposable
     /// <summary>Non-null when the last Unlock() had to auto-recover the throttle state (N1). UI shows it once.</summary>
     public string? ThrottleNotice { get; private set; }
 
+    /// <summary>Per-process copy of the throttle state, so a non-writable state file cannot disable throttling (R3-1).</summary>
+    private static readonly Dictionary<string, UnlockThrottle> MemoryThrottle = new(StringComparer.Ordinal);
+
     /// <summary>
     /// NEW wallet: requires a passed <see cref="BackupChallenge"/> for this exact mnemonic before anything is written (KDW-04).
     /// </summary>
@@ -78,6 +81,10 @@ public sealed class WalletManager : IAsyncDisposable
     {
         Lock();
         var state = UnlockThrottle.Load(ThrottlePath, DateTimeOffset.UtcNow, out var notice);
+        // R3-1: an in-process record (kept when the file could not be written) wins if it is stricter.
+        lock (MemoryThrottle)
+            if (MemoryThrottle.TryGetValue(ThrottlePath, out var mem) && mem.Remaining(DateTimeOffset.UtcNow) >= state.Remaining(DateTimeOffset.UtcNow))
+                state = new UnlockThrottle { Failures = mem.Failures, LastFailureUtc = mem.LastFailureUtc };
         ThrottleNotice = notice;
         var remaining = state.Remaining(DateTimeOffset.UtcNow);
         if (remaining > TimeSpan.Zero) throw new UnlockThrottledException(remaining);
@@ -87,8 +94,22 @@ public sealed class WalletManager : IAsyncDisposable
         {
             _account = WalletKeystore.Unlock(file, pw);
             UnlockThrottle.Reset(ThrottlePath);
+            lock (MemoryThrottle) MemoryThrottle.Remove(ThrottlePath);
         }
-        catch (WrongPasswordException) { state.RecordFailure(DateTimeOffset.UtcNow); state.Save(ThrottlePath); throw; }
+        catch (WrongPasswordException)
+        {
+            state.RecordFailure(DateTimeOffset.UtcNow);
+            var saved = state.Save(ThrottlePath);
+            if (saved) { lock (MemoryThrottle) MemoryThrottle.Remove(ThrottlePath); }
+            else
+            {
+                // R3-1 fail closed: strictest delay, kept in memory for this process, and tell the user.
+                state.Failures = UnlockThrottle.StrictFailures;
+                ThrottleNotice = "The unlock-attempt counter could not be saved (wallet folder not writable?). The strictest delay (30 s) applies to every attempt until it can be saved.";
+            }
+            if (!saved) lock (MemoryThrottle) MemoryThrottle[ThrottlePath] = new UnlockThrottle { Failures = state.Failures, LastFailureUtc = state.LastFailureUtc };
+            throw;
+        }
     }
 
     public string ThrottlePath => Path.Combine(Directory, $"unlock-state.{Settings.Network.ToString().ToLowerInvariant()}.json");

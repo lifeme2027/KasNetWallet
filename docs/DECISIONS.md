@@ -114,3 +114,17 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - Unlock throttle: corrupt → reset; future timestamp → clamp (with UI notice). Security trade-off: an attacker with file write access could reset the counter, but such an attacker can already copy the keystore offline, so the throttle is only a UI speed bump.
 - Settings are range-validated on load (`WalletSettings.Normalize`).
 
+
+## D18. Retest-2 (round 3) decisions
+
+- **R3-5 fee jump at 100 → 101 sompi/gram:** not a bug in the fee arithmetic. *Minimum relay fee* mode pays the relay minimum, which is computed from compute mass only. *Node estimate* mode pays rate × fee mass, and fee mass includes KIP-9 storage mass, which grows roughly as 10^12 / output value. Small outputs therefore cost much more in that mode. The wallet keeps both modes but now warns **"Abnormally high fee relative to the amount"** when fee ≥ `FeePolicy.AbnormalFeeToAmountRatio` (default 0.5) × amount. When storage mass is the cause, the warning says so. The user must acknowledge the warning before broadcasting.
+- **R3-7 Send max over the mass cap:** coins are sorted largest-first. A binary search, plus a short probe for storage-mass non-monotonicity, finds the largest count that still builds within the cap, so the mass limit is filled exactly. If not all UTXOs fit, an acknowledgement-required warning names the UTXOs and KAS left behind and tells the user to consolidate first (Send max to their own address).
+- **R3-1 unlock state not writable:** fail closed. `UnlockThrottle.Save` returns false. The manager then applies the strictest delay (Failures = 1000 → 30 s), keeps the state in memory for the process lifetime, and shows a notice.
+- **R3-2 trade-off (documented, not "fixed"):** anyone who can delete, corrupt, or roll back the state file resets the counter. The throttle is only a speed bump for someone at the keyboard. The real protection against password guessing is the Argon2id cost of the keystore, because an attacker with file access can copy the keystore and attack it offline anyway.
+- **R3-3:** state file reads are capped at 4 KB. A larger file counts as corrupt and is reset.
+- **R3-4:** when a mass error occurs for an amount below about 2 × 10^12 / cap sompi (0.2 KAS at the 100,000 cap), the error says "Amount too small … storage mass".
+- **R3-6:** settings accept the network as a string (any case, `-`/`_` ignored) or a number, and write it as a string. An unknown value (e.g. "Testnet11") resets only that field, with a notice. Unknown `MassPolicies` keys are dropped.
+- **R3-8 redaction:**
+  - 64-hex strings (txids, block hashes) stay visible unless a secret label (private/priv/secret/seed/mnemonic/entropy/key/sk/prv/signing) appears within the 32 characters before them. Hex of 128+ characters is always masked.
+  - Base64 and base64url runs are masked only at key sizes (43/44 or 86–88 characters with a digit or mixed case), or when mixed-case and 120+ characters long. Request ids and GUIDs stay visible.
+  - Mnemonic detection now also covers whitespace gaps of any width up to 400 characters, HTML lists, numbered lists of 6 or more words, and words joined by "and/then/or/plus/followed by".

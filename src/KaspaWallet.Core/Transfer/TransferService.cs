@@ -38,7 +38,17 @@ public static class TransferService
         public ulong Folded => Change == 0 && Fee > Expected + FoldToleranceSompi ? Fee - Expected : 0;
     }
 
-    private sealed record Ctx(HdAccount Account, Network Net, KaspaAddress Payee, KaspaAddress Own, Coin[] Ordered, FeeMode Mode, ulong Rate, ulong ReferenceRate, MassPolicy Mass);
+    internal sealed record Ctx(HdAccount Account, Network Net, KaspaAddress Payee, KaspaAddress Own, Coin[] Ordered, FeeMode Mode, ulong Rate, ulong ReferenceRate, MassPolicy Mass);
+
+    /// <summary>
+    /// R3-4: KIP-9 storage mass of an output is roughly 10^12 / value (sompi), so outputs below about 10^12 / mass-cap
+    /// (0.1 KAS with the 100,000 pre-Toccata cap) cannot fit; ×2 margin because the change output adds storage mass too.
+    /// </summary>
+    internal static ulong SmallAmountThreshold(Ctx c) => 2 * (1_000_000_000_000UL / Math.Max(1UL, c.Mass.EffectiveCap(c.Net)));
+
+    private static string SmallAmountText(Ctx c, ulong amountSompi) =>
+        $"Amount too small: {Kas.Format(amountSompi)} KAS would create a very small output whose storage mass (KIP-9) exceeds the transaction mass limit " +
+        $"({c.Mass.EffectiveCap(c.Net)}). Send at least about {Kas.Format(SmallAmountThreshold(c))} KAS, or combine several small payments into one.";
 
     private static Ctx Prepare(HdAccount account, IReadOnlyList<Coin> coins, string to, FeeMode mode, double? nodeFeeRate, MassPolicy? massPolicy)
     {
@@ -126,10 +136,17 @@ public static class TransferService
         if (amountSompi >= total)
             throw new TransferException($"Amount plus fee exceeds your balance ({Kas.Format(total)} KAS). Use Send max to send everything minus the fee.");
 
-        var built = TryBuild(c, c.Ordered, amountSompi, null, out var err)
-            ?? throw new TransferException(err is not null && err.Contains("Not enough funds", StringComparison.OrdinalIgnoreCase)
-                ? $"Amount plus fee exceeds your balance ({Kas.Format(total)} KAS). Use Send max to send everything minus the fee."
-                : "Could not build transaction: " + err);
+        Built? built;
+        try { built = TryBuild(c, c.Ordered, amountSompi, null, out var err0); if (built is null) throw new TransferException(err0 ?? "unknown error"); }
+        catch (TransferException ex)
+        {
+            var err = ex.Message;
+            if (err.Contains("Not enough funds", StringComparison.OrdinalIgnoreCase))
+                throw new TransferException($"Amount plus fee exceeds your balance ({Kas.Format(total)} KAS). Use Send max to send everything minus the fee.");
+            if (err.Contains("mass", StringComparison.OrdinalIgnoreCase) && amountSompi < SmallAmountThreshold(c))
+                throw new TransferException(SmallAmountText(c, amountSompi));
+            throw new TransferException(err.StartsWith("Transaction mass", StringComparison.Ordinal) ? err : "Could not build transaction: " + err);
+        }
 
         var addedInputs = 0;
         if (built.Folded > 0 && built.Folded < built.MinimumChange)
@@ -154,67 +171,98 @@ public static class TransferService
         return Finish(c, built, amountSompi, feePolicy ?? FeePolicy.Default, false, addedInputs, coins.Count);
     }
 
-    /// <summary>Send max (N2): spends the largest UTXOs that fit the mass cap; amount = inputs − fee, no change output.</summary>
+    /// <summary>
+    /// Send max (N2): amount = inputs − fee, no change output. When all UTXOs exceed the mass cap, a binary search finds the
+    /// largest number of (largest-first) UTXOs that still fits (R3-7); the plan then carries a consolidation warning.
+    /// </summary>
     public static TransferPlan BuildSendMax(HdAccount account, IReadOnlyList<Coin> coins, string to,
         FeeMode mode = FeeMode.MinimumRelay, double? nodeFeeRate = null, FeePolicy? feePolicy = null, MassPolicy? massPolicy = null)
     {
         var c = Prepare(account, coins, to, mode, nodeFeeRate, massPolicy);
         var byValue = c.Ordered.OrderByDescending(x => x.Amount.Sompi).ThenBy(x => x.Outpoint.TransactionId.ToString(), StringComparer.Ordinal).ThenBy(x => x.Outpoint.Index).ToList();
-        var n = byValue.Count;
         string? lastError = null;
-        while (n > 0)
+        var all = TrySendMax(c, byValue, byValue.Count, ref lastError);
+        Built? best = all;
+        var used = byValue.Count;
+        if (best is null)
         {
-            var use = byValue.Take(n).ToArray();
-            ulong total = 0;
-            foreach (var x in use) total = checked(total + x.Amount.Sompi);
-            // Initial over-estimate (≈1,200 g per input + 2,000 g overhead), then converge down to the exact expected fee.
-            ulong fee = checked(c.Rate * ((ulong)use.Length * 1_200 + 2_000));
-            Built? built = null, lastOk = null;
-            var massTooHigh = false;
-            for (var iter = 0; iter < 8; iter++)
+            int lo = 1, hi = byValue.Count - 1; // lo..hi = candidate counts; find largest feasible
+            while (lo <= hi)
             {
-                if (total <= fee || total - fee < MinPaymentSompi)
-                    throw new TransferException($"Balance ({Kas.Format(total)} KAS) is too small to cover the fee and the minimum payment of {Kas.Format(MinPaymentSompi)} KAS.");
-                var amount = total - fee;
-                var b = NewBuilder(c, use).Send(c.Payee, Money.FromSompi(amount)).SpendAllCoins().SendFees(Money.FromSompi(fee));
-                Transaction tx;
-                try { tx = b.BuildTransaction(sign: true); }
-                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-                {
-                    lastError = ex.Message;
-                    massTooHigh = ex.Message.Contains("mass", StringComparison.OrdinalIgnoreCase);
-                    if (massTooHigh) break;
-                    throw new TransferException("Could not build send-max transaction: " + ex.Message);
-                }
-                Built v;
-                try { v = Verify(c, b, tx, amount, allowChange: false); }
-                catch (TransferException ex) when (ex.Message.Contains("mass", StringComparison.Ordinal)) { massTooHigh = true; lastError = ex.Message; break; }
-                if (v.Expected <= fee) lastOk = v;
-                if (v.Expected == fee) { built = v; break; }
-                fee = v.Expected;
+                var mid = lo + (hi - lo) / 2;
+                var r = TrySendMax(c, byValue, mid, ref lastError);
+                if (r is not null) { best = r; used = mid; lo = mid + 1; } else hi = mid - 1;
             }
-            built ??= lastOk;
-            if (built is not null)
-                return Finish(c, built with { Expected = Math.Min(built.Expected, built.Fee) }, built.Tx.Outputs[0].Value.Sompi, feePolicy ?? FeePolicy.Default, true, 0, coins.Count);
-            if (!massTooHigh) throw new TransferException("Could not compute a stable send-max fee: " + lastError);
-            n = Math.Max(n - Math.Max(1, n / 4), 0); // drop the smallest 25% and retry
+            // mass is not perfectly monotonic (storage mass): probe a few counts above the found one
+            for (var k = used + 1; best is not null && k <= Math.Min(byValue.Count - 1, used + 8); k++)
+                if (TrySendMax(c, byValue, k, ref lastError) is Built r2) { best = r2; used = k; }
         }
-        throw new TransferException("No UTXO combination fits the mass limit: " + lastError);
+        if (best is null) throw new TransferException("Even a single UTXO does not fit the mass limit: " + lastError);
+        ulong remaining = 0;
+        foreach (var x in byValue.Skip(used)) remaining += x.Amount.Sompi;
+        var extra = used < byValue.Count
+            ? $"Only {used} of {byValue.Count} UTXOs fit in one transaction (mass limit). {Kas.Format(remaining)} KAS in {byValue.Count - used} UTXO(s) will STAY in this wallet. " +
+              "To send everything, consolidate UTXOs first: use Send max to your OWN address (repeat until 1 UTXO is left), then Send max to the recipient."
+            : null;
+        return Finish(c, best with { Expected = Math.Min(best.Expected, best.Fee) }, best.Tx.Outputs[0].Value.Sompi, feePolicy ?? FeePolicy.Default, true, 0, coins.Count, extra);
     }
 
-    private static TransferPlan Finish(Ctx c, Built b, ulong amountSompi, FeePolicy policy, bool sendMax, int addedInputs, int availableCoins)
+    /// <summary>null = does not fit the mass cap. Throws for other errors (e.g. balance too small).</summary>
+    private static Built? TrySendMax(Ctx c, List<Coin> byValue, int n, ref string? lastError)
+    {
+        var use = byValue.Take(n).ToArray();
+        ulong total = 0;
+        foreach (var x in use) total = checked(total + x.Amount.Sompi);
+        // Initial over-estimate (≈1,200 g per input + 2,000 g overhead), then converge to the exact expected fee.
+        ulong fee = checked(c.Rate * ((ulong)use.Length * 1_200 + 2_000));
+        Built? lastOk = null;
+        for (var iter = 0; iter < 8; iter++)
+        {
+            if (total <= fee || total - fee < MinPaymentSompi)
+            {
+                if (lastOk is not null) return lastOk;
+                if (n < byValue.Count) { lastError = "balance of the fitting UTXOs is too small"; return null; }
+                throw new TransferException($"Balance ({Kas.Format(total)} KAS) is too small to cover the fee and the minimum payment of {Kas.Format(MinPaymentSompi)} KAS.");
+            }
+            var amount = total - fee;
+            var b = NewBuilder(c, use).Send(c.Payee, Money.FromSompi(amount)).SpendAllCoins().SendFees(Money.FromSompi(fee));
+            Transaction tx;
+            try { tx = b.BuildTransaction(sign: true); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                lastError = ex.Message;
+                if (ex.Message.Contains("mass", StringComparison.OrdinalIgnoreCase)) return null;
+                throw new TransferException("Could not build send-max transaction: " + ex.Message);
+            }
+            Built v;
+            try { v = Verify(c, b, tx, amount, allowChange: false); }
+            catch (TransferException ex) when (ex.Message.Contains("mass", StringComparison.Ordinal)) { lastError = ex.Message; return null; }
+            if (v.Expected <= fee) lastOk = v;
+            if (v.Expected == fee) return v;
+            fee = v.Expected;
+        }
+        return lastOk ?? throw new TransferException("Could not compute a stable send-max fee: " + lastError);
+    }
+
+    private static TransferPlan Finish(Ctx c, Built b, ulong amountSompi, FeePolicy policy, bool sendMax, int addedInputs, int availableCoins, string? extraWarning = null)
     {
         var warnings = new List<string>();
+        if (extraWarning is not null) warnings.Add(extraWarning);
         var folded = sendMax ? 0 : b.Folded;
         if (folded > 0)
             warnings.Add($"Change of {Kas.Format(folded)} KAS is below the minimum change output ({Kas.Format(b.MinimumChange)} KAS) and no extra UTXO could make it valid. " +
                          "It will be ADDED TO THE FEE (paid to miners, not returned). Confirm to proceed, or change the amount / use Send max.");
         var effRate = b.FeeMass == 0 ? 0 : (double)b.Fee / b.FeeMass;
         var rateLimit = c.ReferenceRate * policy.RateMultiplier;
-        if (effRate > rateLimit)
+        var storageDriven = b.FeeMass > b.RelayMass;
+        var relRatio = amountSompi == 0 ? double.PositiveInfinity : (double)b.Fee / amountSompi;
+        if (relRatio >= policy.AbnormalFeeToAmountRatio)
+            warnings.Add($"Abnormally high fee relative to the amount: fee {Kas.Format(b.Fee)} KAS is {relRatio * 100:0}% of the {Kas.Format(amountSompi)} KAS sent." +
+                (storageDriven ? " Cause: storage mass (KIP-9) — small outputs are very heavy, and at fee rates above the 100 sompi/gram minimum storage mass is paid in full. Send a larger amount, combine payments, or use the Minimum relay fee mode." : ""));
+        else if (effRate > rateLimit)
             warnings.Add($"Abnormally high fee: {Kas.Format(b.Fee)} KAS = {effRate:0} sompi/gram, more than {policy.RateMultiplier:0.#}× the reference rate ({c.ReferenceRate} sompi/gram).");
         var abs = policy.AbsoluteWarnThreshold(amountSompi);
-        if (b.Fee > abs && effRate <= rateLimit)
+        if (b.Fee > abs && effRate <= rateLimit && relRatio < policy.AbnormalFeeToAmountRatio)
             warnings.Add($"High fee: {Kas.Format(b.Fee)} KAS is more than {Kas.Format(abs)} KAS (max of {Kas.Format(policy.WarnFloorSompi)} KAS and {policy.WarnPercent:0.##}% of the amount). The fee rate itself is normal ({effRate:0} sompi/gram); the fee is high because of the transaction size.");
         return new TransferPlan(b.Tx, c.Account.Network, c.Account.Address, c.Payee.ToString(), amountSompi, b.Fee, b.Change, b.InSum, b.Tx.Inputs.Count,
             b.RelayMass, folded, warnings, sendMax, addedInputs, availableCoins, b.Expected);

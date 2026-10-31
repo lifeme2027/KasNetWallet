@@ -216,8 +216,8 @@ public class Round2Tests
     [Fact]
     public void N7_Base64Url_Redacted()
     {
-        var key = "Ab3_-Zq9xY" + "Kp2_Lm-Np8Rs" + "Tu4Vw-Xy_5Za" + "Bc6De7Fg-Hi_9";
-        Assert.True(key.Length >= 43);
+        var key = "Ab3_-Zq9xY" + "Kp2_Lm-Np8Rs" + "Tu4Vw-Xy_5Za" + "Bc6De7Fg-";
+        Assert.Equal(43, key.Length); // 32-byte key in unpadded base64url (round 3: only key-sized runs are masked)
         var r = SecretRedactor.Redact("token=" + key + " end");
         Assert.DoesNotContain(key, r);
         Assert.Contains(SecretRedactor.Mask, r);

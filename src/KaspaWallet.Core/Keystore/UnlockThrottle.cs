@@ -38,7 +38,12 @@ public sealed class UnlockThrottle
         notice = null;
         if (!File.Exists(path)) return new();
         UnlockThrottle? st;
-        try { st = JsonSerializer.Deserialize<UnlockThrottle>(File.ReadAllText(path)); }
+        try
+        {
+            // R3-3: bounded read (a valid state file is < 200 bytes).
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            st = fs.Length > MaxFileBytes ? null : JsonSerializer.Deserialize<UnlockThrottle>(fs);
+        }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         { st = null; }
         if (st is null)
@@ -61,14 +66,20 @@ public sealed class UnlockThrottle
         return st;
     }
 
-    public void Save(string path)
+    public const int MaxFileBytes = 4096;
+    /// <summary>Strictest delay (30 s), used when the state cannot be persisted (R3-1, fail closed).</summary>
+    public const int StrictFailures = 1000;
+
+    /// <summary>Returns false (and logs) when the state could not be written; callers must fail closed (R3-1).</summary>
+    public bool Save(string path)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             WalletKeystore.WriteOwnerOnly(path, JsonSerializer.Serialize(this));
+            return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { WalletLog.Error("Could not save unlock state", ex); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { WalletLog.Error("Could not save unlock state", ex); return false; }
     }
 
     public static void Reset(string path) { try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
