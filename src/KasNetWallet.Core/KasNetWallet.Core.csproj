@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="$(NKaspaRoot)/src/NKaspa/NKaspa.csproj" />
+    <PackageReference Include="NKaspa" Version="0.1.10-alpha" />
   </ItemGroup>
 
 </Project>

@@ -6,13 +6,13 @@ A Windows (WinForms, .NET 8) desktop wallet for Kaspa. It is a UI plus a thin Co
 
 ## Scope boundary
 - **This repo:** WinForms UI plus `KasNetWallet.Core`, a thin wallet layer (keystore, account, transfer flow, node wrapper). All Kaspa primitives come from NKaspa: BIP39/BIP32, addresses, tx building, sighash, Schnorr signing, mass/fees, and wRPC.
-- **NKaspa:** the protocol library. It is referenced as a local project and never forked or modified here. Gaps are written up in `docs/NKASPA-REQUESTS.md`.
+- **NKaspa:** the protocol library. It is consumed as the NuGet package `NKaspa` 0.1.10-alpha from nuget.org and never forked or modified here. Gaps are written up in `docs/NKASPA-REQUESTS.md`.
 - **kaswallet (.NET port):** the CLI reference implementation. It was used only to check behavior: its independent derivation of the `abandon…about` vector matches NKaspa's output, which is pinned in the tests. Its code is not duplicated here, and this repo is not a replacement for kaspadotnet/kaswallet.
 
 ## Structure
 ```
 KasNetWallet.sln
-Directory.Build.props            # NKaspaRoot (default ../kdw-src/NKaspa)
+Directory.Build.props            # shared build settings (PathMap, no BinaryFormatter)
 src/KasNetWallet.Core/            # net8.0 class library
   MnemonicService.cs             # generate/validate BIP39 (checksum enforced)
   HdAccount.cs                   # m/44'/111111'/0'/0/0 key + address
@@ -43,14 +43,14 @@ docs/DECISIONS.md, docs/NKASPA-REQUESTS.md, docs/patches/
 - The tester guide is docs/FOR-TESTERS.md.
 
 ## Build & run
-Prerequisites: .NET 8 SDK, and a clone of NKaspa next to this repo (or set `NKaspaRoot`):
+Prerequisites: .NET 8 SDK and access to nuget.org. NKaspa is restored as a NuGet package (`NKaspa` 0.1.10-alpha); no NKaspa clone or git is needed:
 ```
-git clone https://github.com/lifeme2027/NKaspa ../kdw-src/NKaspa
+dotnet restore
 dotnet test                                      # Core tests (Linux/macOS/Windows)
 dotnet run --project src/KasNetWallet.WinForms    # Windows only
 ```
 `EnableWindowsTargeting=true` lets the WinForms project build on Linux. It only runs on Windows.
 
 ## Third-party notices
-- NKaspa: MIT, © NKaspa contributors (project reference, not vendored).
+- NKaspa 0.1.10-alpha: MIT, © NKaspa contributors (NuGet package, not vendored).
 - Konscious.Security.Cryptography.Argon2: MIT (NuGet).

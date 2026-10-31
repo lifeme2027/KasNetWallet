@@ -266,3 +266,10 @@ Exceptions are logged only as type + message, never `ToString()`. There is no te
 - **N15.** An unknown network value keeps its original text (`TolerantNetworkConverter.Describe`). The notice shows what the file contains, for example `Network=1.5`, `Network="foo"`, `Network=true` or `Network=7`, instead of an internal number like -2. Undefined integers are now also tracked this way.
 - These stay informational and unchanged: nested duplicate keys (I1), `Network` and `network` in the same file (first match, which is safe), and unknown keys being carried over (I2).
 - The wallet and settings formats are unchanged. Tests: `Retest506a924Tests`.
+
+## D31 — NKaspa via NuGet 0.1.10-alpha (jun, 2026-10-31 21:29 UTC+8)
+
+- `KasNetWallet.Core` now uses `<PackageReference Include="NKaspa" Version="0.1.10-alpha" />` from nuget.org instead of a `ProjectReference` to a local clone.
+- Removed from `Directory.Build.props`: `NKaspaRoot`, `NKaspaPinnedCommit` and the `VerifyNKaspaPin` git check (supersedes D9 and the pin in D25). Building no longer needs git or an NKaspa source tree.
+- No `nuget.config` with local sources is used; restore was verified from a fresh, empty `NUGET_PACKAGES` folder (package source recorded as `https://api.nuget.org/v3/index.json`).
+- NKaspa is still unmodified and not vendored. Its LICENSE ships inside the package and must still ship with any binary.
