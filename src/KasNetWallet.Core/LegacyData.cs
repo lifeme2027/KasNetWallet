@@ -65,7 +65,7 @@ public static class LegacyData
     /// <summary>N4: why <see cref="MergeSettings"/> would fail right now (shown in the prompt), or null.</summary>
     internal static string? SettingsMergeError(string legacyDir, string newDir)
     {
-        try { ReadForMerge(legacyDir, newDir); return null; }
+        try { PlanMerge(legacyDir, newDir); return null; }
         catch (InvalidOperationException ex) { return ex.Message; }
     }
 
@@ -85,7 +85,7 @@ public static class LegacyData
     public static IReadOnlyDictionary<string, string> Import(Status st)
     {
         if (st.SameFolder) throw new InvalidOperationException("Old and new data folders are the same folder.");
-        ReadForMerge(st.LegacyDir, st.NewDir); // N4: fail before copying anything if a settings file is broken
+        PlanMerge(st.LegacyDir, st.NewDir); // N4/N7: fail before copying anything if a settings file is broken or the merge would not load
         Directory.CreateDirectory(st.NewDir);
         var done = new Dictionary<string, string>();
         foreach (var w in st.ImportableWallets)
@@ -132,13 +132,24 @@ public static class LegacyData
     /// and never <see cref="NotImportedKeys"/> (N6). N4: a broken or unreadable file throws; callers abort (nothing is deleted).</summary>
     internal static void MergeSettings(string legacyDir, string newDir)
     {
+        var (target, changed) = PlanMerge(legacyDir, newDir);
+        if (target is not null && changed) File.WriteAllText(Path.Combine(newDir, "settings.json"), target.ToJsonString(WalletSettings.JsonOptions));
+    }
+
+    /// <summary>Computes the merged settings without writing. N8: key names are compared case-insensitively, so a case variant
+    /// (rpcTimeoutSeconds vs RpcTimeoutSeconds) is never added as a duplicate. N7: the result must deserialize as
+    /// <see cref="WalletSettings"/>; a wrong value type throws InvalidOperationException (callers abort).</summary>
+    internal static (JsonObject? Target, bool Changed) PlanMerge(string legacyDir, string newDir)
+    {
         var (oldJ, newJ) = ReadForMerge(legacyDir, newDir);
-        if (oldJ is null) return;
-        var target = newJ ?? new JsonObject();
+        if (oldJ is null) return (null, false);
+        var target = newJ?.DeepClone().AsObject() ?? new JsonObject();
         var changed = newJ is null;
+        var have = new HashSet<string>(target.Select(kv => kv.Key), StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in oldJ)
-            if (!target.ContainsKey(k) && v is not null && !NotImportedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)) { target[k] = v.DeepClone(); changed = true; }
-        if (changed) File.WriteAllText(Path.Combine(newDir, "settings.json"), target.ToJsonString(WalletSettings.JsonOptions));
+            if (v is not null && !NotImportedKeys.Contains(k, StringComparer.OrdinalIgnoreCase) && have.Add(k)) { target[k] = v.DeepClone(); changed = true; }
+        WalletSettings.ValidateTypes(target, "merged");
+        return (target, changed);
     }
 
     /// <summary>M2/N5/N6: the old network choice is not imported, so the note only says what the app will use; it attributes nothing to the old

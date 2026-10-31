@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json;
 
 namespace KasNetWallet.Core;
@@ -67,10 +68,40 @@ public sealed class WalletSettings
         var tmp = newDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".migrating";
         if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
         CopyTree(legacyDir, tmp);
+        SanitizeMigratedSettings(Path.Combine(tmp, "settings.json"));
         Directory.Move(tmp, newDir);
         LastMigratedFrom = legacyDir;
         WalletLog.Warn("Migrated data folder from legacy KaspaDesktopWallet location (legacy copy kept).");
         return true;
+    }
+
+    /// <summary>N9: the first-run copy follows D27. Network and MainnetEnabled are removed (default testnet-10; mainnet must be chosen
+    /// and confirmed again), and the file must pass <see cref="ValidateTypes"/> (N7). A file that cannot be parsed or fails the check is not
+    /// carried over; it stays in the legacy folder, whose delete/import prompt then reports it (N4), so nothing is lost silently.</summary>
+    internal static void SanitizeMigratedSettings(string path)
+    {
+        if (!File.Exists(path)) return;
+        try
+        {
+            var j = JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new JsonException("not a JSON object");
+            foreach (var k in j.Select(kv => kv.Key).Where(k => LegacyData.NotImportedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)).ToArray()) j.Remove(k);
+            ValidateTypes(j, "old");
+            File.WriteAllText(path, j.ToJsonString(Opts));
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            File.Delete(path);
+            WalletLog.Warn("Legacy settings.json was not migrated (unreadable or wrong value types); defaults are used and the legacy copy is kept.");
+        }
+    }
+
+    /// <summary>N7: the settings object must deserialize with the same options as <see cref="Load"/> (value types, nested objects).
+    /// Throws InvalidOperationException naming the problem. Range checks stay in <see cref="Normalize"/>.</summary>
+    internal static void ValidateTypes(JsonObject settings, string what)
+    {
+        try { _ = settings.Deserialize<WalletSettings>(Opts); }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException or FormatException)
+        { throw new InvalidOperationException($"The {what} settings would not load: {ex.Message} Fix or remove the old settings.json, then try again.", ex); }
     }
 
     /// <summary>G1: set when <see cref="MigrateLegacyDirectory"/> copied the legacy folder in this process (UI shows a notice).</summary>
