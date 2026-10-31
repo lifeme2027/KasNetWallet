@@ -17,6 +17,8 @@ internal static class Program
         LegacyDataPrompt.Run(dir); // G1
         var settingsPath = Path.Combine(dir, "settings.json");
         var settings = WalletSettings.Load(settingsPath, out var notices);
+        if (settings.ApplyStartupSafety(WalletSettings.LegacyFallbackReason) is { } fb) // N13
+            MessageBox.Show(SecretRedactor.Redact(fb), "Old data folder in use", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         if (notices.Count > 0)
             MessageBox.Show(SecretRedactor.Redact("Some settings were invalid and have been corrected:\n\n" + string.Join("\n", notices)),
                 "Settings", MessageBoxButtons.OK, MessageBoxIcon.Information);

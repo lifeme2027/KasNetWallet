@@ -190,8 +190,11 @@ public static class LegacyData
 
     private static int ReadDeclines(string newDir)
     {
-        try { return JsonNode.Parse(File.ReadAllText(Path.Combine(newDir, ReminderFile)))?["declinedDeletes"]?.GetValue<int>() ?? 0; }
-        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or FormatException or UnauthorizedAccessException) { return 0; }
+        var p = Path.Combine(newDir, ReminderFile);
+        if (!File.Exists(p)) return 0;
+        try { return WalletSettings.ParseObject(File.ReadAllText(p))["declinedDeletes"] is JsonValue v && v.TryGetValue<int>(out var n) && n >= 0 ? n : 0; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException || WalletSettings.IsBadSettings(ex))
+        { WalletLog.Warn($"{ReminderFile} is damaged ({ex.GetType().Name}); treated as absent."); return 0; } // N14: corrupt file = no record
     }
 
     /// <summary>Records that the user declined deleting the old copy (drives the single later reminder).</summary>

@@ -43,16 +43,10 @@ public sealed class WalletSettings
     {
         get
         {
-            var dir = Path.Combine(AppData, DirectoryName);
-            try { MigrateLegacyDirectory(Path.Combine(AppData, LegacyDirectoryName), dir); }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {   // N10: a failed first-run copy never crashes start-up; the temp folder is already removed by MigrateLegacyDirectory.
-                WalletLog.Warn($"Could not migrate legacy data folder: {ex.GetType().Name}");
-                // Fall back to the legacy folder so existing wallets stay usable.
-                var legacy = Path.Combine(AppData, LegacyDirectoryName);
-                if (Directory.Exists(legacy) && !Directory.Exists(dir)) return legacy;
-            }
-            return dir;
+            if (_resolvedDir is not null) return _resolvedDir;
+            _resolvedDir = ResolveDirectory(AppData, out var reason);
+            LegacyFallbackReason = reason;
+            return _resolvedDir;
         }
     }
 
@@ -127,6 +121,43 @@ public sealed class WalletSettings
         { throw new InvalidOperationException($"The {what} settings would not load: {ex.Message} Fix or remove {fileToFix ?? $"the {what} settings.json"}, then try again.", ex); }
     }
 
+    /// <summary>N10/N13: migrate if needed; on any failure fall back to the legacy folder and report why (<paramref name="fallbackReason"/>).</summary>
+    internal static string ResolveDirectory(string appData, out string? fallbackReason)
+    {
+        fallbackReason = null;
+        var dir = Path.Combine(appData, DirectoryName);
+        var legacy = Path.Combine(appData, LegacyDirectoryName);
+        try { MigrateLegacyDirectory(legacy, dir); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {   // N10: a failed first-run copy never crashes start-up; the temp folder is already removed by MigrateLegacyDirectory.
+            WalletLog.Warn($"Could not migrate legacy data folder: {ex.GetType().Name}");
+            if (Directory.Exists(legacy) && !Directory.Exists(dir))
+            { fallbackReason = ex.GetType().Name + ": " + SecretRedactor.Redact(ex.Message); return legacy; }
+        }
+        return dir;
+    }
+
+    private static string? _resolvedDir; // N13: resolved once per process so the wallet and settings folders never diverge
+
+    /// <summary>N13: set when <see cref="DefaultDirectory"/> fell back to the legacy folder because migration failed.</summary>
+    public static string? LegacyFallbackReason { get; internal set; }
+
+    /// <summary>N13: not persisted. When set, <see cref="Save"/> does not write (the legacy settings.json is never rewritten).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool ReadOnlySession { get; private set; }
+
+    /// <summary>N13: when running from the legacy folder after a failed migration, start on testnet-10 with mainnet disabled
+    /// (in memory only; the old file is not changed). Choosing mainnet asks for confirmation again. Returns the notice, or null.</summary>
+    public string? ApplyStartupSafety(string? fallbackReason)
+    {
+        if (fallbackReason is null) return null;
+        Network = WalletNetwork.Testnet10; MainnetEnabled = false; WrpcUrl = null; ReadOnlySession = true;
+        WalletLog.Warn("Running from the legacy data folder (migration failed); forced testnet-10, settings read-only.");
+        return "The data folder could not be moved to the new KasNetWallet location (" + fallbackReason + ").\n" +
+               "The app is using the old KaspaDesktopWallet folder. For safety it starts on testnet-10 with mainnet disabled, " +
+               "and settings changes are not saved to the old settings.json. To use mainnet, choose it again and confirm.\n" +
+               "Fix the cause (permissions, a locked KasNetWallet.migrating folder, free space) and restart to finish the move.";
+    }
+
     /// <summary>G1: set when <see cref="MigrateLegacyDirectory"/> copied the legacy folder in this process (UI shows a notice).</summary>
     public static string? LastMigratedFrom { get; internal set; }
 
@@ -178,7 +209,7 @@ public sealed class WalletSettings
         var notes = new List<string>();
         void Fix<T>(string name, T value, bool ok, Action reset, string range)
         { if (!ok) { reset(); notes.Add($"{name}={value} is outside {range}; reset to default."); } }
-        Fix(nameof(Network), Network, Enum.IsDefined(Network), () => Network = d.Network, "known networks");
+        Fix(nameof(Network), TolerantNetworkConverter.Describe(Network), Enum.IsDefined(Network), () => Network = d.Network, "known networks");
         Fix(nameof(RpcTimeoutSeconds), RpcTimeoutSeconds, RpcTimeoutSeconds is >= 1 and <= 300, () => RpcTimeoutSeconds = d.RpcTimeoutSeconds, "1..300");
         Fix(nameof(ClipboardClearSeconds), ClipboardClearSeconds, ClipboardClearSeconds is >= 5 and <= 600, () => ClipboardClearSeconds = d.ClipboardClearSeconds, "5..600");
         Fix(nameof(AutoLockMinutes), AutoLockMinutes, AutoLockMinutes is >= 1 and <= 1440, () => AutoLockMinutes = d.AutoLockMinutes, "1..1440");
@@ -203,6 +234,7 @@ public sealed class WalletSettings
 
     public void Save(string path)
     {
+        if (ReadOnlySession) { WalletLog.Warn("settings not saved (read-only legacy session, N13)."); return; }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         File.WriteAllText(path, JsonSerializer.Serialize(this, Opts));
     }
