@@ -1,6 +1,6 @@
 # Requests to NKaspa (from KasNet Wallet)
 
-Now pinned to NKaspa commit `5c49251dfc2e1e5396344f802514bc6ee5e828fa` (0.1.10-alpha; previously `f41c86a6`, 0.1.9-alpha).
+Now pinned to NuGet `NKaspa` 0.1.11-alpha (tip `4767933333d0a3cee6d9960efb10998ff0f4a81c`; previously 0.1.10-alpha / dea2697).
 
 **Resolved at 5c49251:** R1, R6, R9, R10, R11. The wallet adopted the new APIs but keeps its own guards as defense in depth (see DECISIONS D19). Open: R2 (partly: floor is now per policy), R3, R4, R5, R7, R8 (partly). The NKaspa source was **not** modified; the wallet works around each item in Core.
 

@@ -41,7 +41,7 @@ Times are Asia/Shanghai (UTC+8).
 - **Entry point:** `KasNetWallet.WinForms.exe`. DPI mode is PerMonitorV2.
 
 ## 2. NKaspa version
-- **Pinned:** `lifeme2027/NKaspa` NuGet package `NKaspa` 0.1.10-alpha (MIT) from nuget.org, referenced as a PackageReference (see D31).
+- **Pinned:** `lifeme2027/NKaspa` NuGet package `NKaspa` 0.1.11-alpha (MIT) from nuget.org, referenced as a PackageReference (see D34).
 - **Enforced:** `Directory.Build.props` → `VerifyNKaspaPin` **fails the build** if the clone is at another commit or has local modifications.
 - **Unmodified:** the wallet does not modify NKaspa. Gaps are recorded in `docs/NKASPA-REQUESTS.md` (R1–R10) and `docs/patches/`.
 

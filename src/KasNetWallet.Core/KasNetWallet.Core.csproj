@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NKaspa" Version="0.1.10-alpha" />
+    <PackageReference Include="NKaspa" Version="0.1.11-alpha" />
   </ItemGroup>
 
 </Project>

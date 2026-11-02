@@ -6,7 +6,7 @@ A Windows (WinForms, .NET 8) desktop wallet for Kaspa. It is a UI plus a thin Co
 
 ## Scope boundary
 - **This repo:** WinForms UI plus `KasNetWallet.Core`, a thin wallet layer (keystore, account, transfer flow, node wrapper). All Kaspa primitives come from NKaspa: BIP39/BIP32, addresses, tx building, sighash, Schnorr signing, mass/fees, and wRPC.
-- **NKaspa:** the protocol library. It is consumed as the NuGet package `NKaspa` 0.1.10-alpha from nuget.org and never forked or modified here. Gaps are written up in `docs/NKASPA-REQUESTS.md`.
+- **NKaspa:** the protocol library. It is consumed as the NuGet package `NKaspa` 0.1.11-alpha from nuget.org and never forked or modified here. Gaps are written up in `docs/NKASPA-REQUESTS.md`.
 - **kaswallet (.NET port):** the CLI reference implementation. It was used only to check behavior: its independent derivation of the `abandon…about` vector matches NKaspa's output, which is pinned in the tests. Its code is not duplicated here, and this repo is not a replacement for kaspadotnet/kaswallet.
 
 ## Structure
@@ -43,7 +43,7 @@ docs/DECISIONS.md, docs/NKASPA-REQUESTS.md, docs/patches/
 - The tester guide is docs/FOR-TESTERS.md.
 
 ## Build & run
-Prerequisites: .NET 8 SDK and access to nuget.org. NKaspa is restored as a NuGet package (`NKaspa` 0.1.10-alpha); no NKaspa clone or git is needed:
+Prerequisites: .NET 8 SDK and access to nuget.org. NKaspa is restored as a NuGet package (`NKaspa` 0.1.11-alpha); no NKaspa clone or git is needed:
 ```
 dotnet restore
 dotnet test                                      # Core tests (Linux/macOS/Windows)
@@ -52,5 +52,5 @@ dotnet run --project src/KasNetWallet.WinForms    # Windows only
 `EnableWindowsTargeting=true` lets the WinForms project build on Linux. It only runs on Windows.
 
 ## Third-party notices
-- NKaspa 0.1.10-alpha: MIT, © NKaspa contributors (NuGet package, not vendored).
+- NKaspa 0.1.11-alpha: MIT, © NKaspa contributors (NuGet package, not vendored).
 - Konscious.Security.Cryptography.Argon2: MIT (NuGet).

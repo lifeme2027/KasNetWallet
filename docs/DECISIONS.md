@@ -289,3 +289,10 @@ Supersedes D10 (default testnet-10 and mainnet gate), the mainnet send warning, 
 - Legacy fallback (N13): starts on the default network (mainnet) with the default node URL, settings still read-only. Migration notices name mainnet as the default.
 - Connect failures: an unreachable node made each attempt time out (`TaskCanceledException` from the per-call timeout and the 20 s UI timeout). These were already caught, but the status showed "A task was canceled." `NodeErrorText` now shows "Connection failed: node <url> did not answer in time…". Attempts stay bounded (max 4, exponential backoff, only on Connect/Refresh clicks; no timer reconnect).
 - Tests: `NodeErrorTextTests`, D33 tests in `Steering3Tests`, and updated default-network expectations.
+
+## D34 - NKaspa via NuGet 0.1.11-alpha (2026-11-02)
+
+- KasNetWallet.Core PackageReference bumps 0.1.10-alpha to 0.1.11-alpha from nuget.org.
+- Tip at upload: 4767933333d0a3cee6d9960efb10998ff0f4a81c.
+- No keystore format change; Borsh factory and message-sign UI deferred.
+- Actions stay disabled; push only after jun approval.
